@@ -1,0 +1,49 @@
+import { StyleSheet, Text, View } from "react-native";
+import { StatusBar } from 'expo-status-bar';
+import React, { useEffect } from "react";
+import { useNavigation } from "expo-router";
+import { LinearGradient } from 'expo-linear-gradient';
+
+const SplashScreen = () => {
+    const navigation = useNavigation();
+
+    useEffect(() => {
+        const timeoutId = setTimeout(() => {
+            navigation.replace("OnboardingScreen");
+        }, 5000);
+
+        return () => clearTimeout(timeoutId);
+    }, []);
+
+    return (
+        <LinearGradient
+            colors={['#FF8F89', '#FF5F57', '#CC4B45']}
+            style={styles.container}
+            start={{ x: 0.5, y: 0 }}
+            end={{ x: 0.5, y: 1 }}
+        >
+            <StatusBar style="light" />
+            <View style={styles.content}>
+                <Text style={styles.logo}>SpendWise</Text>
+            </View>
+        </LinearGradient>
+    );
+};
+
+export default SplashScreen;
+
+const styles = StyleSheet.create({
+    container: {
+        flex: 1,
+    },
+    content: {
+        flex: 1,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    logo: {
+        fontSize: 45,
+        fontWeight: '700',
+        color: '#FFFFFF',
+    },
+});
