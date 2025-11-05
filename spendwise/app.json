@@ -4,7 +4,7 @@
     "slug": "spendwise",
     "version": "1.0.0",
     "orientation": "portrait",
-    "scheme": "spendwise",
+    "scheme": "com.tasluf.spendwise",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
@@ -14,14 +14,16 @@
       "backgroundColor": "#ffffff"
     },
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.tasluf.spendwise"
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
-      "edgeToEdgeEnabled": true
+      "edgeToEdgeEnabled": true,
+      "package": "com.tasluf.spendwise"
     },
     "web": {
       "favicon": "./assets/favicon.png",

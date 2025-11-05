@@ -12,6 +12,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import Checkbox from 'expo-checkbox';
 import { router } from 'expo-router';
+import { useSignUp } from '../../hooks/useSignUp';
 
 export default function SignUpScreen({ navigation }) {
     const [name, setName] = useState('');
@@ -19,20 +20,24 @@ export default function SignUpScreen({ navigation }) {
     const [password, setPassword] = useState('');
     const [isPasswordVisible, setIsPasswordVisible] = useState(false);
     const [isAgreed, setIsAgreed] = useState(false);
+    const { signUp, loading, error } = useSignUp();
 
-    const handleSignUp = () => {
-        // if (!name || !email || !password) {
-        //     alert('Please fill all fields');
-        //     return;
-        // }
-        // if (!isAgreed) {
-        //     alert('Please agree to Terms of Service and Privacy Policy');
-        //     return;
-        // }
-        // console.log('Sign Up:', { name, email, password });
-        // Handle sign up logic here
+    const handleSignUp = async () => {
+        if (!name || !email || !password) {
+            alert('Please fill all fields');
+            return;
+        }
+        if (!isAgreed) {
+            alert('Please agree to Terms of Service and Privacy Policy');
+            return;
+        }
 
-        router.push('/VerificationScreen');
+        const result = await signUp(email, password, name);
+        if (result.success) {
+            alert(result.message);
+        } else {
+            alert('Error: ' + result.error);
+        }
     };
 
     const handleLogin = () => {
