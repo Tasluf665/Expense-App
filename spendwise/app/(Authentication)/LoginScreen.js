@@ -8,22 +8,30 @@ import {
     KeyboardAvoidingView,
     Platform,
     ScrollView,
+    ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
+import { useSignIn } from '../../hooks/useSignIn';
 
 export default function LoginScreen({ navigation }) {
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [isPasswordVisible, setIsPasswordVisible] = useState(false);
+    const { signIn, loading, error } = useSignIn();
 
-    const handleLogin = () => {
+    const handleLogin = async () => {
         // if (!email || !password) {
         //     alert('Please fill all fields');
         //     return;
         // }
-        // console.log('Login:', { email, password });
-        // Handle login logic here
+
+        // const { success, error: loginError } = await signIn(email, password);
+        // if (success) {
+        //     router.push('/HomeScreen');
+        // } else {
+        //     alert(loginError || 'An error occurred during login');
+        // }
         router.push('/HomeScreen');
     };
 
@@ -97,11 +105,21 @@ export default function LoginScreen({ navigation }) {
 
                     {/* Login Button */}
                     <TouchableOpacity
-                        style={styles.loginButton}
+                        style={[styles.loginButton, loading && styles.loginButtonDisabled]}
                         onPress={handleLogin}
+                        disabled={loading}
                     >
-                        <Text style={styles.loginButtonText}>Login</Text>
+                        {loading ? (
+                            <ActivityIndicator color="#FFFFFF" />
+                        ) : (
+                            <Text style={styles.loginButtonText}>Login</Text>
+                        )}
                     </TouchableOpacity>
+
+                    {/* Error Message */}
+                    {error && (
+                        <Text style={styles.errorText}>{error}</Text>
+                    )}
 
                     {/* Forgot Password Link */}
                     <TouchableOpacity
@@ -128,6 +146,15 @@ const styles = StyleSheet.create({
     container: {
         flex: 1,
         backgroundColor: '#FFFFFF',
+    },
+    errorText: {
+        color: '#FF3B30',
+        textAlign: 'center',
+        marginBottom: 10,
+        fontSize: 14,
+    },
+    loginButtonDisabled: {
+        backgroundColor: '#B794F4',
     },
     scrollContent: {
         flexGrow: 1,

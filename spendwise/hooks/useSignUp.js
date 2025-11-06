@@ -12,7 +12,7 @@ export const useSignUp = () => {
 
         try {
             // Create deep link redirect
-            const redirectUrl = Linking.createURL('/VerificationScreen');
+            const redirectUrl = Linking.createURL('/HomeScreen');
 
             const { data, error: signUpError } = await supabase.auth.signUp({
                 email,
