@@ -1,11 +1,12 @@
 
-import { useState } from 'react';
-import { StyleSheet, Text, View, TouchableOpacity, Animated } from 'react-native';
+import { useState, useEffect } from 'react';
+import { StyleSheet, Text, View, TouchableOpacity, Animated, ActivityIndicator } from 'react-native';
 import PagerView from 'react-native-pager-view';
 import Onboarding1 from '../../assets/svg/Onboarding1.js';
 import Onboarding2 from '../../assets/svg/Onboarding2.js';
 import Onboarding3 from '../../assets/svg/Onboarding3.js';
 import { router } from 'expo-router';
+import { supabase } from '../../lib/supabase';
 
 const OnboardingData = [
     {
@@ -28,8 +29,27 @@ const OnboardingData = [
     },
 ];
 
-export default function App() {
+export default function OnboardingScreen() {
     const [currentPage, setCurrentPage] = useState(0);
+    const [isLoading, setIsLoading] = useState(true);
+
+    useEffect(() => {
+        checkSession();
+    }, []);
+
+    const checkSession = async () => {
+        try {
+            const { data: { session } } = await supabase.auth.getSession();
+            console.log('Current session:', session);
+            if (session) {
+                router.replace('/HomeScreen');
+            }
+        } catch (error) {
+            console.error('Error checking session:', error.message);
+        } finally {
+            setIsLoading(false);
+        }
+    };
 
     const handlePageChange = (e) => {
         setCurrentPage(e.nativeEvent.position);
@@ -42,6 +62,14 @@ export default function App() {
     const handleLogin = () => {
         router.push('/LoginScreen');
     };
+
+    if (isLoading) {
+        return (
+            <View style={styles.loadingContainer}>
+                <ActivityIndicator size="large" color="#7C3FED" />
+            </View>
+        );
+    }
 
     return (
         <View style={styles.container}>
@@ -101,6 +129,12 @@ export default function App() {
 }
 
 const styles = StyleSheet.create({
+    loadingContainer: {
+        flex: 1,
+        backgroundColor: '#FFFFFF',
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
     container: {
         flex: 1,
         backgroundColor: '#F5F5F5',
