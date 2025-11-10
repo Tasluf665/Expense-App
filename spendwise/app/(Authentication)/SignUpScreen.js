@@ -1,9 +1,8 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
     StyleSheet,
     Text,
     View,
-    TextInput,
     TouchableOpacity,
     KeyboardAvoidingView,
     Platform,
@@ -14,35 +13,60 @@ import Checkbox from 'expo-checkbox';
 import { router } from 'expo-router';
 import { useDispatch, useSelector } from "react-redux";
 import { signupUser, resetError } from "../../utils/authSlice";
-import CommonButton from '../../components/CommonButton';
 
-export default function SignUpScreen({ navigation }) {
+import CommonButton from '../../components/CommonButton';
+import CustomInput from '../../components/CustomInput';
+import PasswordInput from '../../components/PasswordInput';
+import Colors from '../../constant/Colors';
+import LoadingActivityIndicator from '../../components/LoadingActivityIndicator';
+import { getErrorMessage } from '../../constant/HelperFun';
+import SuccessDialog from '../../components/SuccessDialog';
+import ErrorDialog from '../../components/ErrorDialog';
+
+
+export default function SignUpScreen() {
     const dispatch = useDispatch();
     const { loading, signupError } = useSelector((state) => state.auth);
 
     const [name, setName] = useState('');
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
-    const [isPasswordVisible, setIsPasswordVisible] = useState(false);
     const [isAgreed, setIsAgreed] = useState(false);
+
+    const [dialogVisible, setDialogVisible] = useState(false);
+    const [aggreeDialogVisible, setAgreeDialogVisible] = useState(false);
+    const [errorDialogVisible, setErrorDialogVisible] = useState(false);
+
+    const hideDialog = () => {
+        setDialogVisible(false);
+        router.replace('/LoginScreen');
+    };
+
+    const hideErrorDialog = () => {
+        setErrorDialogVisible(false);
+    };
+
+    const hideAgreeDialog = () => {
+        setAgreeDialogVisible(false);
+    }
 
     const handleSignUp = async () => {
         if (!name || !email || !password) {
-            alert('Please fill all fields');
+            setErrorDialogVisible(true);
             return;
         }
         if (!isAgreed) {
-            alert('Please agree to Terms of Service and Privacy Policy');
+            setAgreeDialogVisible(true);
             return;
         }
 
         dispatch(signupUser({ username: name, email, password }))
             .unwrap()
             .then(() => {
-
+                setDialogVisible(true)
             })
             .catch((err) => {
-                alert('Error: ' + err);
+                console.log('Signup error:', err);
             });
     };
 
@@ -52,8 +76,23 @@ export default function SignUpScreen({ navigation }) {
 
     const goBack = () => {
         router.back();
-        // navigation.goBack();
     };
+
+    useEffect(() => {
+        if (signupError) {
+            setTimeout(() => {
+                dispatch(resetError());
+            }, 3000);
+        }
+    }, [signupError, dispatch]);
+
+
+
+    if (loading) {
+        return (
+            <LoadingActivityIndicator />
+        )
+    }
 
     return (
         <KeyboardAvoidingView
@@ -67,7 +106,7 @@ export default function SignUpScreen({ navigation }) {
                 {/* Header */}
                 <View style={styles.header}>
                     <TouchableOpacity onPress={goBack} style={styles.backButton}>
-                        <Ionicons name="arrow-back" size={24} color="#000000" />
+                        <Ionicons name="arrow-back" size={24} color={Colors.TextBlack} />
                     </TouchableOpacity>
                     <Text style={styles.headerTitle}>Sign Up</Text>
                     <View style={styles.placeholder} />
@@ -76,59 +115,62 @@ export default function SignUpScreen({ navigation }) {
                 {/* Form */}
                 <View style={styles.form}>
                     {/* Name Input */}
-                    <View style={styles.inputContainer}>
-                        <TextInput
-                            style={styles.input}
-                            placeholder="Name"
-                            placeholderTextColor="#B0B0B0"
-                            value={name}
-                            onChangeText={setName}
-                            autoCapitalize="words"
-                        />
-                    </View>
+                    <CustomInput
+                        placeholder="Name"
+                        value={name}
+                        onChangeText={setName}
+                        autoCapitalize="words"
+                    />
 
                     {/* Email Input */}
-                    <View style={styles.inputContainer}>
-                        <TextInput
-                            style={styles.input}
-                            placeholder="Email"
-                            placeholderTextColor="#B0B0B0"
-                            value={email}
-                            onChangeText={setEmail}
-                            keyboardType="email-address"
-                            autoCapitalize="none"
-                        />
-                    </View>
+                    <CustomInput
+                        placeholder="Email"
+                        value={email}
+                        onChangeText={setEmail}
+                        keyboardType="email-address"
+                    />
 
                     {/* Password Input */}
-                    <View style={styles.inputContainer}>
-                        <TextInput
-                            style={[styles.input, styles.passwordInput]}
-                            placeholder="Password"
-                            placeholderTextColor="#B0B0B0"
-                            value={password}
-                            onChangeText={setPassword}
-                            secureTextEntry={!isPasswordVisible}
-                            autoCapitalize="none"
-                        />
-                        <TouchableOpacity
-                            style={styles.eyeIcon}
-                            onPress={() => setIsPasswordVisible(!isPasswordVisible)}
-                        >
-                            <Ionicons
-                                name={isPasswordVisible ? 'eye-off-outline' : 'eye-outline'}
-                                size={24}
-                                color="#B0B0B0"
-                            />
-                        </TouchableOpacity>
-                    </View>
+                    <PasswordInput
+                        placeholder="Password"
+                        value={password}
+                        onChangeText={setPassword}
+                    />
+
+                    {/* Error Message */}
+                    {signupError && (
+                        <Text style={styles.errorText}>
+                            {getErrorMessage(signupError)}
+                        </Text>
+                    )}
+
+                    <SuccessDialog
+                        visible={dialogVisible}
+                        onDismiss={hideDialog}
+                        title="Congratulations"
+                        message="Account created! Verify your email."
+                    />
+
+                    <ErrorDialog
+                        visible={errorDialogVisible}
+                        onDismiss={hideErrorDialog}
+                        title="Error"
+                        message="All fields are required!"
+                    />
+
+                    <ErrorDialog
+                        visible={aggreeDialogVisible}
+                        onDismiss={hideAgreeDialog}
+                        title="Error"
+                        message="Please agree to Terms of Service and Privacy Policy!"
+                    />
 
                     {/* Terms Checkbox */}
                     <View style={styles.checkboxContainer}>
                         <Checkbox
                             value={isAgreed}
                             onValueChange={setIsAgreed}
-                            color={isAgreed ? '#7C3FED' : undefined}
+                            color={isAgreed ? Colors.Primary : undefined}
                             style={styles.checkbox}
                         />
                         <Text style={styles.checkboxText}>
@@ -160,7 +202,7 @@ export default function SignUpScreen({ navigation }) {
 const styles = StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: '#FFFFFF',
+        backgroundColor: Colors.Background,
     },
     scrollContent: {
         flexGrow: 1,
@@ -170,8 +212,7 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'space-between',
-        paddingTop: 50,
-        paddingBottom: 20,
+        paddingTop: 30,
     },
     backButton: {
         padding: 8,
@@ -179,7 +220,7 @@ const styles = StyleSheet.create({
     headerTitle: {
         fontSize: 20,
         fontWeight: '600',
-        color: '#000000',
+        color: Colors.TextBlack,
     },
     placeholder: {
         width: 40,
@@ -187,29 +228,6 @@ const styles = StyleSheet.create({
     form: {
         flex: 1,
         paddingTop: 40,
-    },
-    inputContainer: {
-        marginBottom: 20,
-        position: 'relative',
-    },
-    input: {
-        height: 56,
-        borderWidth: 1,
-        borderColor: '#E5E5E5',
-        borderRadius: 16,
-        paddingHorizontal: 20,
-        fontSize: 16,
-        color: '#000000',
-        backgroundColor: '#FFFFFF',
-    },
-    passwordInput: {
-        paddingRight: 60,
-    },
-    eyeIcon: {
-        position: 'absolute',
-        right: 20,
-        top: 16,
-        padding: 8,
     },
     checkboxContainer: {
         flexDirection: 'row',
@@ -223,19 +241,18 @@ const styles = StyleSheet.create({
         width: 24,
         height: 24,
         borderWidth: 2,
-        borderColor: '#7C3FED',
+        borderColor: Colors.Primary,
     },
     checkboxText: {
         flex: 1,
         fontSize: 14,
-        color: '#000000',
+        color: Colors.TextBlack,
         lineHeight: 20,
     },
     linkText: {
-        color: '#7C3FED',
+        color: Colors.Primary,
         fontWeight: '600',
     },
-
     loginContainer: {
         flexDirection: 'row',
         justifyContent: 'center',
@@ -243,12 +260,18 @@ const styles = StyleSheet.create({
     },
     loginText: {
         fontSize: 14,
-        color: '#999999',
+        color: Colors.TextGray,
     },
     loginLink: {
         fontSize: 14,
-        color: '#7C3FED',
+        color: Colors.Primary,
         fontWeight: '600',
         textDecorationLine: 'underline',
+    },
+
+    errorText: {
+        color: Colors.Red,
+        textAlign: "center",
+        marginVertical: 10,
     },
 });

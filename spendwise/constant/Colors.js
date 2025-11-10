@@ -18,6 +18,9 @@ const Colors = {
   BorderLight: "#F0F0F0",
   BorderDark: "#E0E0E0",
 
+  // Error Colors
+  Red: "#FF4C4C",
+
 };
 
 export default Colors;
