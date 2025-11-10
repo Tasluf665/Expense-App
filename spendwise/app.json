@@ -30,7 +30,21 @@
       "bundler": "metro"
     },
     "plugins": [
-      "expo-router"
+      "expo-router",
+      [
+        "expo-font",
+        {
+          "fonts": [
+            "./assets/fonts/FunnelDisplay/FunnelDisplay_Bold.ttf",
+            "./assets/fonts/FunnelDisplay/FunnelDisplay_Light.ttf",
+            "./assets//fonts/Funnel_Display/FunnelDisplay_ExtraBold.ttf",
+            "./assets//fonts/Funnel_Display//FunnelDisplay_Medium.ttf",
+            "./assets//fonts/Funnel_Display//FunnelDisplay_Regular.ttf",
+            "./assets/fonts/Funnel_Display/FunnelDisplay_SemiBold.ttf",
+            "./assets/fonts/Funnel_Display/FunnelDisplay_VariableFont_wght.ttf"
+          ]
+        }
+      ]
     ],
     "extra": {
       "router": {},

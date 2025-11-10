@@ -4,16 +4,17 @@ import React, { useEffect } from "react";
 import { router } from "expo-router";
 import { LinearGradient } from 'expo-linear-gradient';
 import Colors from "../../constant/Colors";
+import CustomeFonts from "../../constant/CustomeFonts";
 
 const SplashScreen = () => {
 
-    useEffect(() => {
-        const timeoutId = setTimeout(() => {
-            router.replace('/OnboardingScreen');
-        }, 5000);
+    // useEffect(() => {
+    //     const timeoutId = setTimeout(() => {
+    //         router.replace('/OnboardingScreen');
+    //     }, 5000);
 
-        return () => clearTimeout(timeoutId);
-    }, []);
+    //     return () => clearTimeout(timeoutId);
+    // }, []);
 
     return (
         <LinearGradient
@@ -45,5 +46,6 @@ const styles = StyleSheet.create({
         fontSize: 45,
         fontWeight: '700',
         color: Colors.TextPrimary,
+        fontFamily: CustomeFonts.FunnelDisplay_Light
     },
 });
