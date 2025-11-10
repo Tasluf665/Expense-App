@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
     View,
     Text,
@@ -13,11 +13,26 @@ import FontAwesome from '@expo/vector-icons/FontAwesome';
 import Svg, { Path } from 'react-native-svg';
 import Colors from '../../constant/Colors';
 import { router } from 'expo-router';
+import { supabase } from '../../lib/supabase';
 
 const { width } = Dimensions.get('window');
 
 export default function HomeScreen() {
     const [selectedPeriod, setSelectedPeriod] = useState('Today');
+
+    useEffect(() => {
+        checkSession();
+    }, []);
+
+    const checkSession = async () => {
+        try {
+            const { data: { session } } = await supabase.auth.getSession();
+            if (session) {
+            }
+        } catch (error) {
+            console.error('Error checking session:', error.message);
+        }
+    }
 
     const transactions = [
         {

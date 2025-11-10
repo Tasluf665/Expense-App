@@ -1,33 +1,16 @@
 
 import { useState, useEffect } from 'react';
-import { StyleSheet, Text, View, TouchableOpacity, Animated, ActivityIndicator } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
 import PagerView from 'react-native-pager-view';
-import Onboarding1 from '../../assets/svg/Onboarding1.js';
-import Onboarding2 from '../../assets/svg/Onboarding2.js';
-import Onboarding3 from '../../assets/svg/Onboarding3.js';
 import { router } from 'expo-router';
-import { supabase } from '../../lib/supabase';
 
-const OnboardingData = [
-    {
-        id: 1,
-        title: 'Gain total control of your money',
-        description: 'Become your own money manager and make every cent count',
-        image: Onboarding1,
-    },
-    {
-        id: 2,
-        title: 'Know where your money goes',
-        description: 'Track your transaction easily, with categories and financial report',
-        image: Onboarding2,
-    },
-    {
-        id: 3,
-        title: 'Planning ahead',
-        description: 'Setup your budget for each category so you in control',
-        image: Onboarding3,
-    },
-];
+import { supabase } from '../../lib/supabase';
+import { OnboardingData } from '../../constant/AppData.js'
+import Colors from '../../constant/Colors.js';
+import CommonButton from '../../components/CommonButton.js';
+import LoadingActivityIndicator from '../../components/LoadingActivityIndicator';
+
+
 
 export default function OnboardingScreen() {
     const [currentPage, setCurrentPage] = useState(0);
@@ -40,8 +23,8 @@ export default function OnboardingScreen() {
     const checkSession = async () => {
         try {
             const { data: { session } } = await supabase.auth.getSession();
-            console.log('Current session:', session);
             if (session) {
+                console.log(session)
                 router.replace('/HomeScreen');
             }
         } catch (error) {
@@ -65,9 +48,7 @@ export default function OnboardingScreen() {
 
     if (isLoading) {
         return (
-            <View style={styles.loadingContainer}>
-                <ActivityIndicator size="large" color="#7C3FED" />
-            </View>
+            <LoadingActivityIndicator />
         );
     }
 
@@ -110,41 +91,35 @@ export default function OnboardingScreen() {
                     ))}
                 </View>
 
-                <TouchableOpacity
-                    style={styles.signUpButton}
+                <CommonButton
+                    title="Sign Up"
                     onPress={handleSignUp}
-                >
-                    <Text style={styles.signUpText}>Sign Up</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                    style={styles.loginButton}
+                    style={{ marginBottom: 12 }}
+                />
+                <CommonButton
+                    title="Login"
                     onPress={handleLogin}
-                >
-                    <Text style={styles.loginText}>Login</Text>
-                </TouchableOpacity>
+                    backgroundColor={Colors.Secondary}
+                    textColor={Colors.TextSecondary}
+                    style={{ marginBottom: 12 }}
+                />
+
             </View>
         </View>
     );
 }
 
 const styles = StyleSheet.create({
-    loadingContainer: {
-        flex: 1,
-        backgroundColor: '#FFFFFF',
-        justifyContent: 'center',
-        alignItems: 'center',
-    },
     container: {
         flex: 1,
-        backgroundColor: '#F5F5F5',
+        backgroundColor: Colors.Background,
     },
     pagerView: {
         flex: 1,
     },
     scrollableContent: {
         flex: 1,
-        backgroundColor: '#FFFFFF',
+        backgroundColor: Colors.Background,
         paddingHorizontal: 20,
         paddingTop: 40,
         justifyContent: 'flex-start',
@@ -161,22 +136,22 @@ const styles = StyleSheet.create({
     title: {
         fontSize: 28,
         fontWeight: '700',
-        color: '#000000',
+        color: Colors.TextBlack,
         marginBottom: 12,
         lineHeight: 34,
     },
     description: {
         fontSize: 14,
         fontWeight: '400',
-        color: '#999999',
+        color: Colors.TextGray,
         lineHeight: 20,
     },
     fixedBottomSection: {
-        backgroundColor: '#FFFFFF',
+        backgroundColor: Colors.Background,
         paddingHorizontal: 20,
         paddingVertical: 20,
         borderTopWidth: 1,
-        borderTopColor: '#F0F0F0',
+        borderTopColor: Colors.BorderLight,
     },
     dotsContainer: {
         flexDirection: 'row',
@@ -188,39 +163,15 @@ const styles = StyleSheet.create({
         width: 8,
         height: 8,
         borderRadius: 4,
-        backgroundColor: '#E0E0E0',
+        backgroundColor: Colors.BorderDark,
         marginHorizontal: 4,
     },
     activeDot: {
         width: 30,
         height: 8,
-        backgroundColor: '#7C3FED',
+        backgroundColor: Colors.Primary,
         borderRadius: 4,
     },
-    signUpButton: {
-        backgroundColor: '#7C3FED',
-        paddingVertical: 16,
-        borderRadius: 12,
-        justifyContent: 'center',
-        alignItems: 'center',
-        marginBottom: 12,
-    },
-    signUpText: {
-        fontSize: 16,
-        fontWeight: '600',
-        color: '#FFFFFF',
-    },
-    loginButton: {
-        backgroundColor: '#F0E6FF',
-        paddingVertical: 16,
-        borderRadius: 12,
-        justifyContent: 'center',
-        alignItems: 'center',
-    },
-    loginText: {
-        fontSize: 16,
-        fontWeight: '600',
-        color: '#7C3FED',
-    },
+
 });
 

@@ -1,15 +1,15 @@
 import { StyleSheet, Text, View } from "react-native";
 import { StatusBar } from 'expo-status-bar';
 import React, { useEffect } from "react";
-import { useNavigation } from "expo-router";
+import { router } from "expo-router";
 import { LinearGradient } from 'expo-linear-gradient';
+import Colors from "../../constant/Colors";
 
 const SplashScreen = () => {
-    const navigation = useNavigation();
 
     useEffect(() => {
         const timeoutId = setTimeout(() => {
-            navigation.replace("OnboardingScreen");
+            router.replace('/OnboardingScreen');
         }, 5000);
 
         return () => clearTimeout(timeoutId);
@@ -17,7 +17,7 @@ const SplashScreen = () => {
 
     return (
         <LinearGradient
-            colors={['#FF8F89', '#FF5F57', '#CC4B45']}
+            colors={[Colors.GradientStart, Colors.GradientMiddle, Colors.GradientEnd]}
             style={styles.container}
             start={{ x: 0.5, y: 0 }}
             end={{ x: 0.5, y: 1 }}
@@ -44,6 +44,6 @@ const styles = StyleSheet.create({
     logo: {
         fontSize: 45,
         fontWeight: '700',
-        color: '#FFFFFF',
+        color: Colors.TextPrimary,
     },
 });

@@ -12,15 +12,19 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import Checkbox from 'expo-checkbox';
 import { router } from 'expo-router';
-import { useSignUp } from '../../hooks/useSignUp';
+import { useDispatch, useSelector } from "react-redux";
+import { signupUser, resetError } from "../../utils/authSlice";
+import CommonButton from '../../components/CommonButton';
 
 export default function SignUpScreen({ navigation }) {
+    const dispatch = useDispatch();
+    const { loading, signupError } = useSelector((state) => state.auth);
+
     const [name, setName] = useState('');
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [isPasswordVisible, setIsPasswordVisible] = useState(false);
     const [isAgreed, setIsAgreed] = useState(false);
-    const { signUp, loading, error } = useSignUp();
 
     const handleSignUp = async () => {
         if (!name || !email || !password) {
@@ -32,12 +36,14 @@ export default function SignUpScreen({ navigation }) {
             return;
         }
 
-        const result = await signUp(email, password, name);
-        if (result.success) {
-            alert(result.message);
-        } else {
-            alert('Error: ' + result.error);
-        }
+        dispatch(signupUser({ username: name, email, password }))
+            .unwrap()
+            .then(() => {
+
+            })
+            .catch((err) => {
+                alert('Error: ' + err);
+            });
     };
 
     const handleLogin = () => {
@@ -132,12 +138,11 @@ export default function SignUpScreen({ navigation }) {
                     </View>
 
                     {/* Sign Up Button */}
-                    <TouchableOpacity
-                        style={styles.signUpButton}
+                    <CommonButton
+                        title="Sign Up"
                         onPress={handleSignUp}
-                    >
-                        <Text style={styles.signUpButtonText}>Sign Up</Text>
-                    </TouchableOpacity>
+                        style={{ marginBottom: 15 }}
+                    />
 
                     {/* Login Link */}
                     <View style={styles.loginContainer}>
@@ -230,19 +235,7 @@ const styles = StyleSheet.create({
         color: '#7C3FED',
         fontWeight: '600',
     },
-    signUpButton: {
-        height: 56,
-        backgroundColor: '#7C3FED',
-        borderRadius: 16,
-        justifyContent: 'center',
-        alignItems: 'center',
-        marginBottom: 20,
-    },
-    signUpButtonText: {
-        fontSize: 18,
-        fontWeight: '600',
-        color: '#FFFFFF',
-    },
+
     loginContainer: {
         flexDirection: 'row',
         justifyContent: 'center',

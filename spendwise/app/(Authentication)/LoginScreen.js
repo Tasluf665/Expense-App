@@ -21,18 +21,17 @@ export default function LoginScreen({ navigation }) {
     const { signIn, loading, error } = useSignIn();
 
     const handleLogin = async () => {
-        // if (!email || !password) {
-        //     alert('Please fill all fields');
-        //     return;
-        // }
+        if (!email || !password) {
+            alert('Please fill all fields');
+            return;
+        }
 
-        // const { success, error: loginError } = await signIn(email, password);
-        // if (success) {
-        //     router.push('/HomeScreen');
-        // } else {
-        //     alert(loginError || 'An error occurred during login');
-        // }
-        router.push('/HomeScreen');
+        const { success, error: loginError } = await signIn(email, password);
+        if (success) {
+            router.push('/HomeScreen');
+        } else {
+            alert(loginError || 'An error occurred during login');
+        }
     };
 
     const handleForgotPassword = () => {

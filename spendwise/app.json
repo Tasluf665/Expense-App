@@ -31,6 +31,13 @@
     },
     "plugins": [
       "expo-router"
-    ]
+    ],
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "4af2d432-4df6-4f54-b185-a394e0b51f17"
+      }
+    },
+    "owner": "tasluf"
   }
 }
