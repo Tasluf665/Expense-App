@@ -1,43 +1,79 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
     StyleSheet,
     Text,
     View,
-    TextInput,
-    TouchableOpacity,
     KeyboardAvoidingView,
     Platform,
     ScrollView,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { widthPercentageToDP as wp, heightPercentageToDP as hp } from "react-native-responsive-screen";
 import { router } from 'expo-router';
+import { useDispatch, useSelector } from "react-redux";
 
-export default function ForgotPasswordScreen({ navigation }) {
+import CustomeTitle from '../../components/CustomeTitle';
+import CustomeFonts from '../../constant/CustomeFonts';
+import Colors from '../../constant/Colors';
+import CommonButton from '../../components/CommonButton';
+import CustomInput from '../../components/CustomInput';
+import { forgotPassword, resetError } from "../../utils/authSlice";
+import LoadingActivityIndicator from '../../components/LoadingActivityIndicator';
+import ErrorDialog from '../../components/ErrorDialog';
+import SuccessDialog from '../../components/SuccessDialog';
+import { getErrorMessage } from '../../constant/HelperFun';
+
+export default function ForgotPasswordScreen() {
+    const dispatch = useDispatch();
+    const { loading, error } = useSelector((state) => state.auth);
+
     const [email, setEmail] = useState('');
-    const [isSubmitted, setIsSubmitted] = useState(false);
+
+    const [dialogVisible, setDialogVisible] = useState(false);
+    const [errorDialogVisible, setErrorDialogVisible] = useState(false);
+
+    const hideDialog = () => {
+        setDialogVisible(false);
+        router.replace('/LoginScreen');
+    };
+
+    const hideErrorDialog = () => {
+        setErrorDialogVisible(false);
+    };
 
     const handleContinue = () => {
         if (!email) {
-            alert('Please enter your email');
+            setErrorDialogVisible(true);
             return;
         }
-        console.log('Sending reset link to:', email);
-        // Handle password reset logic here
-        setIsSubmitted(true);
-        // After a delay, navigate to verification or confirm screen
-        // setTimeout(() => {
-        //   navigation.navigate('VerifyEmail');
-        // }, 1500);
+        dispatch(forgotPassword(email))
+            .unwrap()
+            .then(() => {
+                setDialogVisible(true)
+            })
+            .catch((err) => {
+                console.log('ForgotPassword error:', err);
+            });
     };
 
     const goBack = () => {
-        if (isSubmitted) {
-            setIsSubmitted(false);
-            setEmail('');
-        } else {
-            router.back();
-        }
+        router.back();
     };
+
+    useEffect(() => {
+        if (error) {
+            setTimeout(() => {
+                dispatch(resetError());
+            }, 3000);
+        }
+    }, [error, dispatch]);
+
+
+
+    if (loading) {
+        return (
+            <LoadingActivityIndicator />
+        )
+    }
 
     return (
         <KeyboardAvoidingView
@@ -49,13 +85,8 @@ export default function ForgotPasswordScreen({ navigation }) {
                 showsVerticalScrollIndicator={false}
             >
                 {/* Header */}
-                <View style={styles.header}>
-                    <TouchableOpacity onPress={goBack} style={styles.backButton}>
-                        <Ionicons name="arrow-back" size={24} color="#000000" />
-                    </TouchableOpacity>
-                    <Text style={styles.headerTitle}>Forgot Password</Text>
-                    <View style={styles.placeholder} />
-                </View>
+                <CustomeTitle title="Forgot Password" goBack={goBack} />
+
 
                 {/* Form */}
                 <View style={styles.form}>
@@ -66,41 +97,42 @@ export default function ForgotPasswordScreen({ navigation }) {
                     </Text>
 
                     {/* Email Input */}
-                    <View style={styles.inputContainer}>
-                        <TextInput
-                            style={styles.input}
-                            placeholder="Email"
-                            placeholderTextColor="#B0B0B0"
-                            value={email}
-                            onChangeText={setEmail}
-                            keyboardType="email-address"
-                            autoCapitalize="none"
-                            editable={!isSubmitted}
-                        />
-                    </View>
+                    <CustomInput
+                        placeholder="Email"
+                        value={email}
+                        onChangeText={setEmail}
+                        keyboardType="email-address"
+                    />
+
+                    {/* Error Message */}
+                    {error && (
+                        <Text style={styles.errorText}>
+                            {getErrorMessage(error)}
+                        </Text>
+                    )}
 
                     {/* Continue Button */}
-                    <TouchableOpacity
-                        style={styles.continueButton}
-                        onPress={handleContinue}
-                        disabled={isSubmitted}
-                    >
-                        <Text style={styles.continueButtonText}>Continue</Text>
-                    </TouchableOpacity>
 
-                    {/* Success Message */}
-                    {isSubmitted && (
-                        <View style={styles.successContainer}>
-                            <View style={styles.successIconContainer}>
-                                <Ionicons name="checkmark-circle" size={48} color="#7C3FED" />
-                            </View>
-                            <Text style={styles.successTitle}>Check your email</Text>
-                            <Text style={styles.successMessage}>
-                                We've sent a password reset link to {email}. Click the link in the
-                                email to reset your password.
-                            </Text>
-                        </View>
-                    )}
+                    <CommonButton
+                        title="Continue"
+                        onPress={handleContinue}
+                    />
+
+                    <SuccessDialog
+                        visible={dialogVisible}
+                        onDismiss={hideDialog}
+                        title="Congratulations"
+                        message="Check your email for password reset instructions!"
+                    />
+
+                    <ErrorDialog
+                        visible={errorDialogVisible}
+                        onDismiss={hideErrorDialog}
+                        title="Error"
+                        message="Email field is required!"
+                    />
+
+
                 </View>
             </ScrollView>
         </KeyboardAvoidingView>
@@ -110,85 +142,28 @@ export default function ForgotPasswordScreen({ navigation }) {
 const styles = StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: '#FFFFFF',
+        backgroundColor: Colors.Background,
     },
     scrollContent: {
         flexGrow: 1,
-        paddingHorizontal: 20,
-    },
-    header: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        paddingTop: 50,
-        paddingBottom: 20,
-    },
-    backButton: {
-        padding: 8,
-    },
-    headerTitle: {
-        fontSize: 20,
-        fontWeight: '600',
-        color: '#000000',
-    },
-    placeholder: {
-        width: 40,
+        paddingHorizontal: wp('6%'),
     },
     form: {
         flex: 1,
-        paddingTop: 40,
+        paddingTop: hp('5%'),
     },
     title: {
-        fontSize: 28,
-        fontWeight: '700',
-        color: '#000000',
-        marginBottom: 40,
+        fontSize: 24,
+        fontFamily: CustomeFonts.FunnelDisplay_Bold,
+        color: Colors.TextBlack,
+        marginBottom: hp('5%'),
         lineHeight: 36,
     },
-    inputContainer: {
-        marginBottom: 30,
-        position: 'relative',
+
+    errorText: {
+        color: Colors.Red,
+        textAlign: "center",
+        marginVertical: hp(1),
     },
-    input: {
-        height: 56,
-        borderWidth: 1,
-        borderColor: '#E5E5E5',
-        borderRadius: 16,
-        paddingHorizontal: 20,
-        fontSize: 16,
-        color: '#000000',
-        backgroundColor: '#FFFFFF',
-    },
-    continueButton: {
-        height: 56,
-        backgroundColor: '#7C3FED',
-        borderRadius: 16,
-        justifyContent: 'center',
-        alignItems: 'center',
-    },
-    continueButtonText: {
-        fontSize: 18,
-        fontWeight: '600',
-        color: '#FFFFFF',
-    },
-    successContainer: {
-        marginTop: 60,
-        alignItems: 'center',
-    },
-    successIconContainer: {
-        marginBottom: 20,
-    },
-    successTitle: {
-        fontSize: 24,
-        fontWeight: '700',
-        color: '#000000',
-        marginBottom: 12,
-    },
-    successMessage: {
-        fontSize: 14,
-        fontWeight: '400',
-        color: '#666666',
-        textAlign: 'center',
-        lineHeight: 22,
-    },
+
 });

@@ -28,7 +28,6 @@ export const signupUser = createAsyncThunk(
                     email: data.user.email,
                     username,
                     created_at: new Date().toISOString(),
-                    email_verified: false
                 }]);
 
             if (dbError) throw dbError;
@@ -57,6 +56,8 @@ export const loginUser = createAsyncThunk(
                 password
             });
 
+            console.log("data.user", data.user);
+
             if (signInError) throw signInError;
 
             // Check email verification
@@ -69,10 +70,12 @@ export const loginUser = createAsyncThunk(
             const { data: userData, error: dbError } = await supabase
                 .from('users')
                 .select('*')
-                .eq('uid', data.user.id)
+                .eq('id', data.user.id)
                 .single();
 
             if (dbError) throw dbError;
+
+            console.log('UserData: ', userData);
 
             return userData;
         } catch (error) {
@@ -86,13 +89,19 @@ export const forgotPassword = createAsyncThunk(
     "auth/forgotPassword",
     async (email, { rejectWithValue }) => {
         try {
-            const { error } = await supabase.auth.resetPasswordForEmail(email, {
-                redirectTo: 'com.tasluf.spendwise://'
+            // Use Linking.createURL to generate platform-specific redirect URL
+            const { Linking } = await import('expo-linking');
+            const resetPasswordURL = Linking.createURL("/ResetPassword");
+
+            console.log('Reset password URL:', resetPasswordURL);
+
+            const { data, error } = await supabase.auth.resetPasswordForEmail(email, {
+                redirectTo: resetPasswordURL,
             });
 
             if (error) throw error;
 
-            return "Password reset email sent!";
+            return "Password reset email sent! Check your inbox.";
         } catch (error) {
             return rejectWithValue(error.message);
         }

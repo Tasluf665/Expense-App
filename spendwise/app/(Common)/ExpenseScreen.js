@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
     View,
     Text,
@@ -12,13 +12,19 @@ import {
 import { LinearGradient } from 'expo-linear-gradient';
 import FontAwesome from '@expo/vector-icons/FontAwesome';
 import { useRouter } from 'expo-router';
+import { supabase } from '../../lib/supabase';
+
+import { useLocalSearchParams } from 'expo-router';
 
 export default function ExpenseScreen() {
-    const [amount, setAmount] = useState('');
+    const params = useLocalSearchParams();
+    const isEditMode = params.mode === 'edit';
+
+    const [amount, setAmount] = useState(params.amount || '');
     const [selectedCategory, setSelectedCategory] = useState(null);
-    const [description, setDescription] = useState('');
+    const [description, setDescription] = useState(params.description || '');
     const [selectedWallet, setSelectedWallet] = useState(null);
-    const [isRepeatEnabled, setIsRepeatEnabled] = useState(false);
+    const [isRepeatEnabled, setIsRepeatEnabled] = useState(params.is_repeat === 'true');
     const [showCategoryDropdown, setShowCategoryDropdown] = useState(false);
     const [showWalletDropdown, setShowWalletDropdown] = useState(false);
     const router = useRouter();
@@ -38,18 +44,68 @@ export default function ExpenseScreen() {
         { id: 3, name: 'Credit Card' },
     ];
 
-    const handleContinue = () => {
+    // Initialize selected items if in edit mode
+    useEffect(() => {
+        if (isEditMode) {
+            if (params.category) {
+                const category = categories.find(c => c.name === params.category);
+                if (category) setSelectedCategory(category);
+            }
+            if (params.wallet) {
+                const wallet = wallets.find(w => w.name === params.wallet);
+                if (wallet) setSelectedWallet(wallet);
+            }
+        }
+    }, [isEditMode]);
+
+    const handleContinue = async () => {
         if (!amount || !selectedCategory || !selectedWallet) {
             alert('Please fill all required fields');
             return;
         }
-        console.log({
-            amount,
-            category: selectedCategory,
-            description,
-            wallet: selectedWallet,
-            repeat: isRepeatEnabled,
-        });
+
+        try {
+            const { data: { user } } = await supabase.auth.getUser();
+
+            if (!user) {
+                alert('User not authenticated');
+                return;
+            }
+
+            const payload = {
+                user_id: user.id,
+                amount: parseFloat(amount),
+                category: selectedCategory.name,
+                wallet: selectedWallet.name,
+                description: description,
+                is_repeat: isRepeatEnabled,
+            };
+
+            let error;
+            if (isEditMode) {
+                const { error: updateError } = await supabase
+                    .from('expenses')
+                    .update(payload)
+                    .eq('id', params.id);
+                error = updateError;
+            } else {
+                const { error: insertError } = await supabase
+                    .from('expenses')
+                    .insert([payload]);
+                error = insertError;
+            }
+
+            if (error) {
+                console.error('Error saving expense:', error);
+                alert(`Failed to ${isEditMode ? 'update' : 'add'} expense`);
+            } else {
+                alert(`Expense ${isEditMode ? 'updated' : 'added'} successfully`);
+                router.back();
+            }
+        } catch (error) {
+            console.error('Unexpected error:', error);
+            alert('An unexpected error occurred');
+        }
     };
 
     return (
@@ -71,7 +127,7 @@ export default function ExpenseScreen() {
                         <TouchableOpacity onPress={() => router.back()}>
                             <FontAwesome name="arrow-left" size={24} color="#FFFFFF" />
                         </TouchableOpacity>
-                        <Text style={styles.headerTitle}>Expense</Text>
+                        <Text style={styles.headerTitle}>{isEditMode ? 'Edit Expense' : 'Expense'}</Text>
                         <View style={{ width: 24 }} />
                     </View>
 
@@ -200,7 +256,7 @@ export default function ExpenseScreen() {
                         style={styles.continueButton}
                         onPress={handleContinue}
                     >
-                        <Text style={styles.continueButtonText}>Continue</Text>
+                        <Text style={styles.continueButtonText}>{isEditMode ? 'Update' : 'Continue'}</Text>
                     </TouchableOpacity>
                 </View>
             </ScrollView>

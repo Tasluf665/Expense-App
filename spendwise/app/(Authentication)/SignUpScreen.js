@@ -8,11 +8,10 @@ import {
     Platform,
     ScrollView,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 import Checkbox from 'expo-checkbox';
 import { router } from 'expo-router';
 import { useDispatch, useSelector } from "react-redux";
-import { signupUser, resetError } from "../../utils/authSlice";
+import { widthPercentageToDP as wp, heightPercentageToDP as hp } from "react-native-responsive-screen";
 
 import CommonButton from '../../components/CommonButton';
 import CustomInput from '../../components/CustomInput';
@@ -22,6 +21,9 @@ import LoadingActivityIndicator from '../../components/LoadingActivityIndicator'
 import { getErrorMessage } from '../../constant/HelperFun';
 import SuccessDialog from '../../components/SuccessDialog';
 import ErrorDialog from '../../components/ErrorDialog';
+import CustomeFonts from '../../constant/CustomeFonts';
+import CustomeTitle from '../../components/CustomeTitle';
+import { signupUser, resetError } from "../../utils/authSlice";
 
 
 export default function SignUpScreen() {
@@ -104,13 +106,7 @@ export default function SignUpScreen() {
                 showsVerticalScrollIndicator={false}
             >
                 {/* Header */}
-                <View style={styles.header}>
-                    <TouchableOpacity onPress={goBack} style={styles.backButton}>
-                        <Ionicons name="arrow-back" size={24} color={Colors.TextBlack} />
-                    </TouchableOpacity>
-                    <Text style={styles.headerTitle}>Sign Up</Text>
-                    <View style={styles.placeholder} />
-                </View>
+                <CustomeTitle title="Sign Up" goBack={goBack} />
 
                 {/* Form */}
                 <View style={styles.form}>
@@ -208,26 +204,9 @@ const styles = StyleSheet.create({
         flexGrow: 1,
         paddingHorizontal: 20,
     },
-    header: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        paddingTop: 30,
-    },
-    backButton: {
-        padding: 8,
-    },
-    headerTitle: {
-        fontSize: 20,
-        fontWeight: '600',
-        color: Colors.TextBlack,
-    },
-    placeholder: {
-        width: 40,
-    },
     form: {
         flex: 1,
-        paddingTop: 40,
+        paddingTop: hp(5),
     },
     checkboxContainer: {
         flexDirection: 'row',
@@ -248,10 +227,10 @@ const styles = StyleSheet.create({
         fontSize: 14,
         color: Colors.TextBlack,
         lineHeight: 20,
+        fontFamily: CustomeFonts.FunnelDisplay_Regular
     },
     linkText: {
         color: Colors.Primary,
-        fontWeight: '600',
     },
     loginContainer: {
         flexDirection: 'row',
@@ -261,17 +240,18 @@ const styles = StyleSheet.create({
     loginText: {
         fontSize: 14,
         color: Colors.TextGray,
+        fontFamily: CustomeFonts.FunnelDisplay_Regular
     },
     loginLink: {
         fontSize: 14,
         color: Colors.Primary,
-        fontWeight: '600',
         textDecorationLine: 'underline',
+        fontFamily: CustomeFonts.FunnelDisplay_Regular
     },
 
     errorText: {
         color: Colors.Red,
         textAlign: "center",
-        marginVertical: 10,
+        marginVertical: hp(1),
     },
 });

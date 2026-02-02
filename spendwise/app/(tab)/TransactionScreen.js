@@ -8,8 +8,15 @@ import {
     SectionList,
     Modal,
     FlatList,
+    Alert,
 } from 'react-native';
 import FontAwesome from '@expo/vector-icons/FontAwesome';
+
+import { useFocusEffect, router } from 'expo-router';
+import TransactionActionModal from '../../components/TransactionActionModal';
+import { useCallback } from 'react';
+import { supabase } from '../../lib/supabase';
+import { format, isToday, isYesterday, parseISO } from 'date-fns';
 
 export default function TransactionScreen() {
     const [selectedMonth, setSelectedMonth] = useState('Month');
@@ -18,6 +25,12 @@ export default function TransactionScreen() {
     const [filterBy, setFilterBy] = useState(null);
     const [sortBy, setSortBy] = useState(null);
     const [selectedCategories, setSelectedCategories] = useState([]);
+    const [transactionSections, setTransactionSections] = useState([]);
+    const [loading, setLoading] = useState(true);
+
+    // Modal State
+    const [modalVisible, setModalVisible] = useState(false);
+    const [selectedTransaction, setSelectedTransaction] = useState(null);
 
     const months = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
@@ -25,73 +38,96 @@ export default function TransactionScreen() {
     const sortOptions = ['Highest', 'Lowest', 'Newest', 'Oldest'];
     const categories = ['Food', 'Shopping', 'Transportation', 'Entertainment', 'Bills', 'Salary', 'Bonus', 'Other'];
 
-    const transactions = [
-        {
-            title: 'Today',
-            data: [
-                {
-                    id: 1,
-                    title: 'Shopping',
-                    description: 'Buy some grocery',
-                    amount: -120,
-                    time: '10:00 AM',
-                    icon: 'shopping-basket',
-                    backgroundColor: '#FFF4E6',
-                    iconColor: '#FFA500',
-                    type: 'expense',
-                },
-                {
-                    id: 2,
-                    title: 'Subscription',
-                    description: 'Disney+ Annual..',
-                    amount: -80,
-                    time: '03:30 PM',
-                    icon: 'tv',
-                    backgroundColor: '#F0E6FF',
-                    iconColor: '#7C3FED',
-                    type: 'expense',
-                },
-                {
-                    id: 3,
-                    title: 'Food',
-                    description: 'Buy a ramen',
-                    amount: -32,
-                    time: '07:30 PM',
-                    icon: 'cutlery',
-                    backgroundColor: '#FFE6E6',
-                    iconColor: '#FF5555',
-                    type: 'expense',
-                },
-            ],
-        },
-        {
-            title: 'Yesterday',
-            data: [
-                {
-                    id: 4,
-                    title: 'Salary',
-                    description: 'Salary for July',
-                    amount: 5000,
-                    time: '04:30 PM',
-                    icon: 'dollar',
-                    backgroundColor: '#E6F9F5',
-                    iconColor: '#00D09E',
-                    type: 'income',
-                },
-                {
-                    id: 5,
-                    title: 'Transportation',
-                    description: 'Charging Tesla',
-                    amount: -18,
-                    time: '08:30 PM',
-                    icon: 'car',
-                    backgroundColor: '#E6F2FF',
-                    iconColor: '#3B82F6',
-                    type: 'expense',
-                },
-            ],
-        },
-    ];
+    useFocusEffect(
+        useCallback(() => {
+            fetchTransactions();
+        }, [])
+    );
+
+    const getCategoryStyles = (category, type) => {
+        const styles = {
+            'Food': { icon: 'cutlery', color: '#FF5555', bg: '#FFE6E6' },
+            'Shopping': { icon: 'shopping-bag', color: '#FFA500', bg: '#FFF4E6' },
+            'Transport': { icon: 'car', color: '#3B82F6', bg: '#E6F2FF' },
+            'Entertainment': { icon: 'film', color: '#7C3FED', bg: '#F0E6FF' },
+            'Bills': { icon: 'file-text', color: '#EF4444', bg: '#FEE2E2' },
+            'Salary': { icon: 'dollar', color: '#00D09E', bg: '#E6F9F5' },
+            'Bonus': { icon: 'gift', color: '#F59E0B', bg: '#FEF3C7' },
+            'Freelance': { icon: 'laptop', color: '#6366F1', bg: '#E0E7FF' },
+            'Investment': { icon: 'line-chart', color: '#10B981', bg: '#D1FAE5' },
+            'Refund': { icon: 'undo', color: '#8B5CF6', bg: '#EDE9FE' },
+            'Other': { icon: 'ellipsis-h', color: '#6B7280', bg: '#F3F4F6' },
+        };
+
+        return styles[category] || { icon: 'question', color: '#6B7280', bg: '#F3F4F6' };
+    };
+
+    const fetchTransactions = async () => {
+        try {
+            setLoading(true);
+            const { data: { user } } = await supabase.auth.getUser();
+            if (!user) return;
+
+            const { data: expenses, error: expenseError } = await supabase
+                .from('expenses')
+                .select('*')
+                .eq('user_id', user.id)
+                .order('created_at', { ascending: false });
+
+            const { data: income, error: incomeError } = await supabase
+                .from('income')
+                .select('*')
+                .eq('user_id', user.id)
+                .order('created_at', { ascending: false });
+
+            if (expenseError || incomeError) {
+                console.error('Error fetching data:', expenseError || incomeError);
+                return;
+            }
+
+            const allTransactions = [
+                ...expenses.map(e => ({ ...e, type: 'expense' })),
+                ...income.map(i => ({ ...i, type: 'income' }))
+            ].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+
+            const grouped = allTransactions.reduce((acc, curr) => {
+                const date = parseISO(curr.created_at);
+                let title = format(date, 'dd MMM yyyy');
+
+                if (isToday(date)) title = 'Today';
+                if (isYesterday(date)) title = 'Yesterday';
+
+                const existingSection = acc.find(s => s.title === title);
+                const categoryStyle = getCategoryStyles(curr.category, curr.type);
+
+                const item = {
+                    id: curr.id,
+                    title: curr.category,
+                    description: curr.description || curr.wallet,
+                    amount: curr.type === 'expense' ? -Math.abs(curr.amount) : Math.abs(curr.amount),
+                    time: format(date, 'hh:mm a'),
+                    icon: categoryStyle.icon,
+                    backgroundColor: categoryStyle.bg,
+                    iconColor: categoryStyle.color,
+                    type: curr.type,
+                    originalDate: curr.created_at
+                };
+
+                if (existingSection) {
+                    existingSection.data.push(item);
+                } else {
+                    acc.push({ title, data: [item] });
+                }
+                return acc;
+            }, []);
+
+            setTransactionSections(grouped);
+        } catch (error) {
+            console.error('Error in fetchTransactions:', error);
+        } finally {
+            setLoading(false);
+        }
+    };
 
     const handleMonthSelect = (month) => {
         setSelectedMonth(month);
@@ -129,8 +165,70 @@ export default function TransactionScreen() {
         setShowFilterModal(false);
     };
 
+    const handleTransactionPress = (transaction) => {
+        setSelectedTransaction(transaction);
+        setModalVisible(true);
+    };
+
+    const handleEdit = () => {
+        setModalVisible(false);
+        if (!selectedTransaction) return;
+
+        const screen = selectedTransaction.type === 'expense' ? '/(Common)/ExpenseScreen' : '/(Common)/IncomeScreen';
+
+        router.push({
+            pathname: screen,
+            params: {
+                id: selectedTransaction.id,
+                mode: 'edit',
+                amount: selectedTransaction.amount.toString(),
+                category: selectedTransaction.category,
+                description: selectedTransaction.description || '',
+                wallet: selectedTransaction.wallet,
+                is_repeat: selectedTransaction.is_repeat?.toString(),
+            }
+        });
+    };
+
+    const handleDelete = () => {
+        if (!selectedTransaction) return;
+
+        Alert.alert(
+            "Delete Transaction",
+            "Are you sure you want to delete this transaction?",
+            [
+                { text: "Cancel", style: "cancel" },
+                {
+                    text: "Delete",
+                    style: "destructive",
+                    onPress: async () => {
+                        try {
+                            const table = selectedTransaction.type === 'expense' ? 'expenses' : 'income';
+                            const { error } = await supabase
+                                .from(table)
+                                .delete()
+                                .eq('id', selectedTransaction.id);
+
+                            if (error) throw error;
+
+                            setModalVisible(false);
+                            fetchTransactions(); // Refresh data
+                            Alert.alert("Success", "Transaction deleted successfully");
+                        } catch (error) {
+                            console.error("Error deleting transaction:", error);
+                            Alert.alert("Error", "Failed to delete transaction");
+                        }
+                    }
+                }
+            ]
+        );
+    };
+
     const renderTransactionItem = ({ item }) => (
-        <TouchableOpacity style={styles.transactionItem}>
+        <TouchableOpacity
+            style={styles.transactionItem}
+            onPress={() => handleTransactionPress(item)}
+        >
             <View
                 style={[
                     styles.transactionIcon,
@@ -219,12 +317,14 @@ export default function TransactionScreen() {
 
             {/* Transaction List */}
             <SectionList
-                sections={transactions}
+                sections={transactionSections}
                 keyExtractor={(item) => item.id}
                 renderItem={renderTransactionItem}
                 renderSectionHeader={renderSectionHeader}
                 scrollEnabled={true}
                 contentContainerStyle={styles.listContent}
+                refreshing={loading}
+                onRefresh={fetchTransactions}
             />
 
             {/* Month Selection Modal */}
@@ -366,6 +466,13 @@ export default function TransactionScreen() {
                     </View>
                 </View>
             </Modal>
+
+            <TransactionActionModal
+                visible={modalVisible}
+                onClose={() => setModalVisible(false)}
+                onEdit={handleEdit}
+                onDelete={handleDelete}
+            />
         </View>
     );
 }

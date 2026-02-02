@@ -1,6 +1,7 @@
 import React from 'react';
 import { StyleSheet, View, TextInput } from 'react-native';
 import Colors from '../constant/Colors';
+import CustomeFonts from '../constant/CustomeFonts';
 
 export default function CustomInput({
     placeholder,
@@ -39,7 +40,8 @@ const styles = StyleSheet.create({
         borderRadius: 16,
         paddingHorizontal: 20,
         fontSize: 16,
-        color: '#000000',
+        color: Colors.TextBlack,
         backgroundColor: Colors.Background,
+        fontFamily: CustomeFonts.FunnelDisplay_Regular
     },
 });

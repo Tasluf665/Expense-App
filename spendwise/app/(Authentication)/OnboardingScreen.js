@@ -9,7 +9,8 @@ import { OnboardingData } from '../../constant/AppData.js'
 import Colors from '../../constant/Colors.js';
 import CommonButton from '../../components/CommonButton.js';
 import LoadingActivityIndicator from '../../components/LoadingActivityIndicator';
-
+import CustomeFonts from '../../constant/CustomeFonts.js';
+import { widthPercentageToDP as wp, heightPercentageToDP as hp } from "react-native-responsive-screen";
 
 
 export default function OnboardingScreen() {
@@ -24,7 +25,6 @@ export default function OnboardingScreen() {
         try {
             const { data: { session } } = await supabase.auth.getSession();
             if (session) {
-                console.log(session)
                 router.replace('/HomeScreen');
             }
         } catch (error) {
@@ -120,36 +120,36 @@ const styles = StyleSheet.create({
     scrollableContent: {
         flex: 1,
         backgroundColor: Colors.Background,
-        paddingHorizontal: 20,
-        paddingTop: 40,
+        paddingHorizontal: wp(4),
+        paddingTop: hp(6),
         justifyContent: 'flex-start',
     },
     imageContainer: {
-        height: 250,
+        height: hp(40),
         justifyContent: 'center',
         alignItems: 'center',
-        marginBottom: 30,
+        marginBottom: hp(3),
     },
     content: {
         paddingHorizontal: 10,
     },
     title: {
         fontSize: 28,
-        fontWeight: '700',
         color: Colors.TextBlack,
-        marginBottom: 12,
+        marginBottom: hp(2),
         lineHeight: 34,
+        fontFamily: CustomeFonts.FunnelDisplay_SemiBold
     },
     description: {
         fontSize: 14,
-        fontWeight: '400',
         color: Colors.TextGray,
         lineHeight: 20,
+        fontFamily: CustomeFonts.FunnelDisplay_Regular
     },
     fixedBottomSection: {
         backgroundColor: Colors.Background,
-        paddingHorizontal: 20,
-        paddingVertical: 20,
+        paddingHorizontal: wp(6),
+        paddingVertical: hp(3),
         borderTopWidth: 1,
         borderTopColor: Colors.BorderLight,
     },

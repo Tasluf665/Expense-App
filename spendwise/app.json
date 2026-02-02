@@ -23,7 +23,21 @@
         "backgroundColor": "#ffffff"
       },
       "edgeToEdgeEnabled": true,
-      "package": "com.tasluf.spendwise"
+      "package": "com.tasluf.spendwise",
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "data": [
+            {
+              "scheme": "com.tasluf.spendwise"
+            }
+          ],
+          "category": [
+            "BROWSABLE",
+            "DEFAULT"
+          ]
+        }
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png",
@@ -35,11 +49,11 @@
         "expo-font",
         {
           "fonts": [
-            "./assets/fonts/FunnelDisplay/FunnelDisplay_Bold.ttf",
-            "./assets/fonts/FunnelDisplay/FunnelDisplay_Light.ttf",
-            "./assets//fonts/Funnel_Display/FunnelDisplay_ExtraBold.ttf",
-            "./assets//fonts/Funnel_Display//FunnelDisplay_Medium.ttf",
-            "./assets//fonts/Funnel_Display//FunnelDisplay_Regular.ttf",
+            "./assets/fonts/Funnel_Display/FunnelDisplay_Bold.ttf",
+            "./assets/fonts/Funnel_Display/FunnelDisplay_Light.ttf",
+            "./assets/fonts/Funnel_Display/FunnelDisplay_ExtraBold.ttf",
+            "./assets/fonts/Funnel_Display/FunnelDisplay_Medium.ttf",
+            "./assets/fonts/Funnel_Display/FunnelDisplay_Regular.ttf",
             "./assets/fonts/Funnel_Display/FunnelDisplay_SemiBold.ttf",
             "./assets/fonts/Funnel_Display/FunnelDisplay_VariableFont_wght.ttf"
           ]

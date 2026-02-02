@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
     View,
     Text,
@@ -12,44 +12,100 @@ import {
 import { LinearGradient } from 'expo-linear-gradient';
 import FontAwesome from '@expo/vector-icons/FontAwesome';
 import { useRouter } from 'expo-router';
+import { supabase } from '../../lib/supabase';
+
+import { useLocalSearchParams } from 'expo-router';
 
 export default function IncomeScreen() {
-    const [amount, setAmount] = useState('');
+    const params = useLocalSearchParams();
+    const isEditMode = params.mode === 'edit';
+
+    const [amount, setAmount] = useState(params.amount || '');
     const [selectedCategory, setSelectedCategory] = useState(null);
-    const [description, setDescription] = useState('');
+    const [description, setDescription] = useState(params.description || '');
     const [selectedWallet, setSelectedWallet] = useState(null);
-    const [isRepeatEnabled, setIsRepeatEnabled] = useState(false);
+    const [isRepeatEnabled, setIsRepeatEnabled] = useState(params.is_repeat === 'true');
     const [showCategoryDropdown, setShowCategoryDropdown] = useState(false);
     const [showWalletDropdown, setShowWalletDropdown] = useState(false);
     const router = useRouter();
 
     const categories = [
-        { id: 1, name: 'Salary', icon: 'briefcase' },
-        { id: 2, name: 'Bonus', icon: 'gift' },
-        { id: 3, name: 'Freelance', icon: 'laptop' },
-        { id: 4, name: 'Investment', icon: 'line-chart' },
-        { id: 5, name: 'Refund', icon: 'undo' },
+        { id: 1, name: 'Salary', icon: 'dollar' },
+        { id: 2, name: 'Passive Income', icon: 'line-chart' },
+        { id: 3, name: 'Business', icon: 'briefcase' },
+        { id: 4, name: 'Freelance', icon: 'laptop' },
+        { id: 5, name: 'Gift', icon: 'gift' },
         { id: 6, name: 'Other', icon: 'ellipsis-h' },
     ];
 
     const wallets = [
         { id: 1, name: 'Cash' },
-        { id: 2, name: 'Debit Card' },
-        { id: 3, name: 'Credit Card' },
+        { id: 2, name: 'Bank Transfer' },
+        { id: 3, name: 'Cheque' },
     ];
 
-    const handleContinue = () => {
+    // Initialize selected items if in edit mode
+    useEffect(() => {
+        if (isEditMode) {
+            if (params.category) {
+                const category = categories.find(c => c.name === params.category);
+                if (category) setSelectedCategory(category);
+            }
+            if (params.wallet) {
+                const wallet = wallets.find(w => w.name === params.wallet);
+                if (wallet) setSelectedWallet(wallet);
+            }
+        }
+    }, [isEditMode, params.category, params.wallet]);
+
+    const handleContinue = async () => {
         if (!amount || !selectedCategory || !selectedWallet) {
             alert('Please fill all required fields');
             return;
         }
-        console.log({
-            amount,
-            category: selectedCategory,
-            description,
-            wallet: selectedWallet,
-            repeat: isRepeatEnabled,
-        });
+
+        try {
+            const { data: { user } } = await supabase.auth.getUser();
+
+            if (!user) {
+                alert('User not authenticated');
+                return;
+            }
+
+            const payload = {
+                user_id: user.id,
+                amount: parseFloat(amount),
+                category: selectedCategory.name,
+                wallet: selectedWallet.name,
+                description: description,
+                is_repeat: isRepeatEnabled,
+            };
+
+            let error;
+            if (isEditMode) {
+                const { error: updateError } = await supabase
+                    .from('income')
+                    .update(payload)
+                    .eq('id', params.id);
+                error = updateError;
+            } else {
+                const { error: insertError } = await supabase
+                    .from('income')
+                    .insert([payload]);
+                error = insertError;
+            }
+
+            if (error) {
+                console.error('Error saving income:', error);
+                alert(`Failed to ${isEditMode ? 'update' : 'add'} income`);
+            } else {
+                alert(`Income ${isEditMode ? 'updated' : 'added'} successfully`);
+                router.back();
+            }
+        } catch (error) {
+            console.error('Unexpected error:', error);
+            alert('An unexpected error occurred');
+        }
     };
 
     return (
@@ -71,7 +127,7 @@ export default function IncomeScreen() {
                         <TouchableOpacity onPress={() => router.back()}>
                             <FontAwesome name="arrow-left" size={24} color="#FFFFFF" />
                         </TouchableOpacity>
-                        <Text style={styles.headerTitle}>Income</Text>
+                        <Text style={styles.headerTitle}>{isEditMode ? 'Edit Income' : 'Income'}</Text>
                         <View style={{ width: 24 }} />
                     </View>
 
@@ -200,7 +256,7 @@ export default function IncomeScreen() {
                         style={styles.continueButton}
                         onPress={handleContinue}
                     >
-                        <Text style={styles.continueButtonText}>Continue</Text>
+                        <Text style={styles.continueButtonText}>{isEditMode ? 'Update' : 'Continue'}</Text>
                     </TouchableOpacity>
                 </View>
             </ScrollView>

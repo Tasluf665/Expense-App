@@ -1,5 +1,6 @@
 import { StyleSheet, Text, TouchableOpacity } from 'react-native';
 import Colors from '../constant/Colors';
+import CustomeFonts from '../constant/CustomeFonts';
 
 export default function CommonButton({
     title,
@@ -38,6 +39,6 @@ const styles = StyleSheet.create({
     },
     text: {
         fontSize: 16,
-        fontWeight: '600',
+        fontFamily: CustomeFonts.FunnelDisplay_SemiBold
     },
 });

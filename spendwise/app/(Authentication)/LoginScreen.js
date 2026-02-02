@@ -1,37 +1,56 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
     StyleSheet,
     Text,
     View,
-    TextInput,
     TouchableOpacity,
     KeyboardAvoidingView,
     Platform,
     ScrollView,
-    ActivityIndicator,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
-import { useSignIn } from '../../hooks/useSignIn';
+import { useDispatch, useSelector } from "react-redux";
+import { widthPercentageToDP as wp, heightPercentageToDP as hp } from "react-native-responsive-screen";
 
-export default function LoginScreen({ navigation }) {
+import CommonButton from '../../components/CommonButton';
+import CustomInput from '../../components/CustomInput';
+import PasswordInput from '../../components/PasswordInput';
+import Colors from '../../constant/Colors';
+import CustomeFonts from '../../constant/CustomeFonts';
+import CustomeTitle from '../../components/CustomeTitle';
+import LoadingActivityIndicator from '../../components/LoadingActivityIndicator';
+import ErrorDialog from '../../components/ErrorDialog';
+import { getErrorMessage } from '../../constant/HelperFun';
+
+import { loginUser, resetError } from "../../utils/authSlice";
+
+export default function LoginScreen() {
+    const dispatch = useDispatch();
+    const { loading, loginError } = useSelector((state) => state.auth);
+
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
-    const [isPasswordVisible, setIsPasswordVisible] = useState(false);
-    const { signIn, loading, error } = useSignIn();
+
+    const [errorDialogVisible, setErrorDialogVisible] = useState(false);
+
+    const hideErrorDialog = () => {
+        setErrorDialogVisible(false);
+    };
 
     const handleLogin = async () => {
         if (!email || !password) {
-            alert('Please fill all fields');
+            setErrorDialogVisible(true);
             return;
         }
 
-        const { success, error: loginError } = await signIn(email, password);
-        if (success) {
-            router.push('/HomeScreen');
-        } else {
-            alert(loginError || 'An error occurred during login');
-        }
+        dispatch(loginUser({ email, password }))
+            .unwrap()
+            .then(() => {
+                router.replace('/HomeScreen');
+            })
+            .catch((err) => {
+                console.log('Login error:', err);
+            });
     };
 
     const handleForgotPassword = () => {
@@ -46,6 +65,22 @@ export default function LoginScreen({ navigation }) {
         router.back();
     };
 
+    useEffect(() => {
+        if (loginError) {
+            setTimeout(() => {
+                dispatch(resetError());
+            }, 3000);
+        }
+    }, [loginError, dispatch]);
+
+
+
+    if (loading) {
+        return (
+            <LoadingActivityIndicator />
+        )
+    }
+
     return (
         <KeyboardAvoidingView
             style={styles.container}
@@ -56,69 +91,46 @@ export default function LoginScreen({ navigation }) {
                 showsVerticalScrollIndicator={false}
             >
                 {/* Header */}
-                <View style={styles.header}>
-                    <TouchableOpacity onPress={goBack} style={styles.backButton}>
-                        <Ionicons name="arrow-back" size={24} color="#000000" />
-                    </TouchableOpacity>
-                    <Text style={styles.headerTitle}>Login</Text>
-                    <View style={styles.placeholder} />
-                </View>
+                <CustomeTitle title="Login" goBack={goBack} />
 
                 {/* Form */}
                 <View style={styles.form}>
                     {/* Email Input */}
-                    <View style={styles.inputContainer}>
-                        <TextInput
-                            style={styles.input}
-                            placeholder="Email"
-                            placeholderTextColor="#B0B0B0"
-                            value={email}
-                            onChangeText={setEmail}
-                            keyboardType="email-address"
-                            autoCapitalize="none"
-                        />
-                    </View>
+                    <CustomInput
+                        placeholder="Email"
+                        value={email}
+                        onChangeText={setEmail}
+                        keyboardType="email-address"
+                    />
 
                     {/* Password Input */}
-                    <View style={styles.inputContainer}>
-                        <TextInput
-                            style={[styles.input, styles.passwordInput]}
-                            placeholder="Password"
-                            placeholderTextColor="#B0B0B0"
-                            value={password}
-                            onChangeText={setPassword}
-                            secureTextEntry={!isPasswordVisible}
-                            autoCapitalize="none"
-                        />
-                        <TouchableOpacity
-                            style={styles.eyeIcon}
-                            onPress={() => setIsPasswordVisible(!isPasswordVisible)}
-                        >
-                            <Ionicons
-                                name={isPasswordVisible ? 'eye-off-outline' : 'eye-outline'}
-                                size={24}
-                                color="#B0B0B0"
-                            />
-                        </TouchableOpacity>
-                    </View>
-
-                    {/* Login Button */}
-                    <TouchableOpacity
-                        style={[styles.loginButton, loading && styles.loginButtonDisabled]}
-                        onPress={handleLogin}
-                        disabled={loading}
-                    >
-                        {loading ? (
-                            <ActivityIndicator color="#FFFFFF" />
-                        ) : (
-                            <Text style={styles.loginButtonText}>Login</Text>
-                        )}
-                    </TouchableOpacity>
+                    <PasswordInput
+                        placeholder="Password"
+                        value={password}
+                        onChangeText={setPassword}
+                    />
 
                     {/* Error Message */}
-                    {error && (
-                        <Text style={styles.errorText}>{error}</Text>
+                    {loginError && (
+                        <Text style={styles.errorText}>
+                            {getErrorMessage(loginError)}
+                        </Text>
                     )}
+
+                    <ErrorDialog
+                        visible={errorDialogVisible}
+                        onDismiss={hideErrorDialog}
+                        title="Error"
+                        message="All fields are required!"
+                    />
+
+                    {/* Login Button */}
+
+                    <CommonButton
+                        title="Login"
+                        onPress={handleLogin}
+                        style={{ marginBottom: 15 }}
+                    />
 
                     {/* Forgot Password Link */}
                     <TouchableOpacity
@@ -144,88 +156,24 @@ export default function LoginScreen({ navigation }) {
 const styles = StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: '#FFFFFF',
-    },
-    errorText: {
-        color: '#FF3B30',
-        textAlign: 'center',
-        marginBottom: 10,
-        fontSize: 14,
-    },
-    loginButtonDisabled: {
-        backgroundColor: '#B794F4',
+        backgroundColor: Colors.Background,
     },
     scrollContent: {
         flexGrow: 1,
         paddingHorizontal: 20,
     },
-    header: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        paddingTop: 50,
-        paddingBottom: 20,
-    },
-    backButton: {
-        padding: 8,
-    },
-    headerTitle: {
-        fontSize: 20,
-        fontWeight: '600',
-        color: '#000000',
-    },
-    placeholder: {
-        width: 40,
-    },
     form: {
         flex: 1,
         paddingTop: 60,
     },
-    inputContainer: {
-        marginBottom: 20,
-        position: 'relative',
-    },
-    input: {
-        height: 56,
-        borderWidth: 1,
-        borderColor: '#E5E5E5',
-        borderRadius: 16,
-        paddingHorizontal: 20,
-        fontSize: 16,
-        color: '#000000',
-        backgroundColor: '#FFFFFF',
-    },
-    passwordInput: {
-        paddingRight: 60,
-    },
-    eyeIcon: {
-        position: 'absolute',
-        right: 20,
-        top: 16,
-        padding: 8,
-    },
-    loginButton: {
-        height: 56,
-        backgroundColor: '#7C3FED',
-        borderRadius: 16,
-        justifyContent: 'center',
-        alignItems: 'center',
-        marginBottom: 20,
-        marginTop: 20,
-    },
-    loginButtonText: {
-        fontSize: 18,
-        fontWeight: '600',
-        color: '#FFFFFF',
-    },
     forgotPasswordContainer: {
         alignItems: 'center',
-        marginBottom: 30,
+        marginBottom: hp(4),
     },
     forgotPasswordText: {
         fontSize: 14,
-        color: '#7C3FED',
-        fontWeight: '600',
+        color: Colors.Primary,
+        fontFamily: CustomeFonts.FunnelDisplay_SemiBold
     },
     signUpContainer: {
         flexDirection: 'row',
@@ -234,12 +182,19 @@ const styles = StyleSheet.create({
     },
     signUpText: {
         fontSize: 14,
-        color: '#999999',
+        color: Colors.TextGray,
+        fontFamily: CustomeFonts.FunnelDisplay_Regular
     },
     signUpLink: {
         fontSize: 14,
-        color: '#7C3FED',
-        fontWeight: '600',
+        color: Colors.Primary,
         textDecorationLine: 'underline',
+        fontFamily: CustomeFonts.FunnelDisplay_Regular
+    },
+
+    errorText: {
+        color: Colors.Red,
+        textAlign: "center",
+        marginVertical: hp(1),
     },
 });

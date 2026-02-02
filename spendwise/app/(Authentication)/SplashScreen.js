@@ -8,13 +8,13 @@ import CustomeFonts from "../../constant/CustomeFonts";
 
 const SplashScreen = () => {
 
-    // useEffect(() => {
-    //     const timeoutId = setTimeout(() => {
-    //         router.replace('/OnboardingScreen');
-    //     }, 5000);
+    useEffect(() => {
+        const timeoutId = setTimeout(() => {
+            router.replace('/OnboardingScreen');
+        }, 5000);
 
-    //     return () => clearTimeout(timeoutId);
-    // }, []);
+        return () => clearTimeout(timeoutId);
+    }, []);
 
     return (
         <LinearGradient
@@ -44,8 +44,7 @@ const styles = StyleSheet.create({
     },
     logo: {
         fontSize: 45,
-        fontWeight: '700',
         color: Colors.TextPrimary,
-        fontFamily: CustomeFonts.FunnelDisplay_Light
+        fontFamily: CustomeFonts.FunnelDisplay_Bold,
     },
 });

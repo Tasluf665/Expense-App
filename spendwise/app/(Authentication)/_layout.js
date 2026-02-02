@@ -11,6 +11,7 @@ export default () => {
       <Stack.Screen name="SignUpScreen" />
       <Stack.Screen name="LoginScreen" />
       <Stack.Screen name="ForgotPasswordScreen" />
+      <Stack.Screen name="ResetPasswordScreen" />
     </Stack>
   );
 };

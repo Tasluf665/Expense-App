@@ -3,6 +3,7 @@ import { StyleSheet, View, TextInput, TouchableOpacity } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
 import Colors from '../constant/Colors';
+import CustomeFonts from '../constant/CustomeFonts';
 
 export default function PasswordInput({
     placeholder = 'Password',
@@ -52,6 +53,7 @@ const styles = StyleSheet.create({
         paddingHorizontal: 20,
         fontSize: 16,
         backgroundColor: Colors.Background,
+        fontFamily: CustomeFonts.FunnelDisplay_Regular
     },
     passwordInput: {
         paddingRight: 60,

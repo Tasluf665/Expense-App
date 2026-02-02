@@ -7,65 +7,213 @@ import {
     TouchableOpacity,
     Image,
     Dimensions,
+    Alert,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import FontAwesome from '@expo/vector-icons/FontAwesome';
 import Svg, { Path } from 'react-native-svg';
 import Colors from '../../constant/Colors';
-import { router } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import { supabase } from '../../lib/supabase';
+import { useCallback } from 'react';
+import { format } from 'date-fns';
+import TransactionActionModal from '../../components/TransactionActionModal';
 
 const { width } = Dimensions.get('window');
 
 export default function HomeScreen() {
     const [selectedPeriod, setSelectedPeriod] = useState('Today');
+    const [balance, setBalance] = useState(0);
+    const [totalIncome, setTotalIncome] = useState(0);
+    const [totalExpenses, setTotalExpenses] = useState(0);
+    const [recentTransactions, setRecentTransactions] = useState([]);
 
-    useEffect(() => {
-        checkSession();
-    }, []);
+    // Modal State
+    const [modalVisible, setModalVisible] = useState(false);
+    const [selectedTransaction, setSelectedTransaction] = useState(null);
 
-    const checkSession = async () => {
+    useFocusEffect(
+        useCallback(() => {
+            fetchData();
+        }, [])
+    );
+
+    const getCategoryStyles = (category, type) => {
+        const styles = {
+            'Food': { icon: 'cutlery', color: '#FF5555', bg: '#FFE6E6' },
+            'Shopping': { icon: 'shopping-bag', color: '#FFA500', bg: '#FFF4E6' },
+            'Transport': { icon: 'car', color: '#3B82F6', bg: '#E6F2FF' },
+            'Entertainment': { icon: 'film', color: '#7C3FED', bg: '#F0E6FF' },
+            'Bills': { icon: 'file-text', color: '#EF4444', bg: '#FEE2E2' },
+            'Salary': { icon: 'dollar', color: '#00D09E', bg: '#E6F9F5' },
+            'Bonus': { icon: 'gift', color: '#F59E0B', bg: '#FEF3C7' },
+            'Freelance': { icon: 'laptop', color: '#6366F1', bg: '#E0E7FF' },
+            'Investment': { icon: 'line-chart', color: '#10B981', bg: '#D1FAE5' },
+            'Refund': { icon: 'undo', color: '#8B5CF6', bg: '#EDE9FE' },
+            'Other': { icon: 'ellipsis-h', color: '#6B7280', bg: '#F3F4F6' },
+            'Passive Income': { icon: 'line-chart', color: '#10B981', bg: '#D1FAE5' },
+            'Business': { icon: 'briefcase', color: '#6366F1', bg: '#E0E7FF' },
+            'Gift': { icon: 'gift', color: '#F59E0B', bg: '#FEF3C7' },
+        };
+
+        return styles[category] || { icon: 'question', color: '#6B7280', bg: '#F3F4F6' };
+    };
+
+    const fetchData = async () => {
         try {
-            const { data: { session } } = await supabase.auth.getSession();
-            if (session) {
-            }
-        } catch (error) {
-            console.error('Error checking session:', error.message);
-        }
-    }
+            const { data: { user } } = await supabase.auth.getUser();
+            if (!user) return;
 
-    const transactions = [
-        {
-            id: 1,
-            title: 'Shopping',
-            description: 'Buy some grocery',
-            amount: -120,
-            time: '10:00 AM',
-            icon: 'shopping-basket',
-            backgroundColor: '#FFF4E6',
-            iconColor: '#FFA500',
-        },
-        {
-            id: 2,
-            title: 'Subscription',
-            description: 'Disney+ Annual..',
-            amount: -80,
-            time: '03:30 PM',
-            icon: 'tv',
-            backgroundColor: '#F0E6FF',
-            iconColor: '#7C3FED',
-        },
-        {
-            id: 3,
-            title: 'Food',
-            description: 'Buy a ramen',
-            amount: -32,
-            time: '07:30 PM',
-            icon: 'cutlery',
-            backgroundColor: '#FFE6E6',
-            iconColor: '#FF5555',
-        },
-    ];
+            const { data: expenses, error: expenseError } = await supabase
+                .from('expenses')
+                .select('*')
+                .eq('user_id', user.id);
+
+            const { data: income, error: incomeError } = await supabase
+                .from('income')
+                .select('*')
+                .eq('user_id', user.id);
+
+            if (expenseError || incomeError) {
+                console.error('Error fetching data:', expenseError || incomeError);
+                return;
+            }
+
+            // Calculate totals
+            const expTotal = expenses.reduce((sum, item) => sum + Number(item.amount), 0);
+            const incTotal = income.reduce((sum, item) => sum + Number(item.amount), 0);
+
+            setTotalExpenses(expTotal);
+            setTotalIncome(incTotal);
+            setBalance(incTotal - expTotal);
+
+            // Get recent transactions
+            const allTransactions = [
+                ...expenses.map(e => ({ ...e, type: 'expense' })),
+                ...income.map(i => ({ ...i, type: 'income' }))
+            ].sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
+                .slice(0, 5); // Take top 5
+
+            const formattedRecent = allTransactions.map(curr => {
+                const categoryStyle = getCategoryStyles(curr.category, curr.type);
+                return {
+                    ...curr, // Keep original data for editing
+                    title: curr.category,
+                    description: curr.description || curr.wallet,
+                    displayAmount: curr.type === 'expense' ? -Math.abs(curr.amount) : Math.abs(curr.amount),
+                    time: format(new Date(curr.created_at), 'hh:mm a'),
+                    icon: categoryStyle.icon,
+                    backgroundColor: categoryStyle.bg,
+                    iconColor: categoryStyle.color,
+                    type: curr.type
+                };
+            });
+
+            setRecentTransactions(formattedRecent);
+
+        } catch (error) {
+            console.error('Error in fetchData:', error);
+        }
+    };
+
+    const handleTransactionPress = (transaction) => {
+        setSelectedTransaction(transaction);
+        setModalVisible(true);
+    };
+
+    const handleEdit = () => {
+        setModalVisible(false);
+        if (!selectedTransaction) return;
+
+        const screen = selectedTransaction.type === 'expense' ? '/(Common)/ExpenseScreen' : '/(Common)/IncomeScreen';
+
+        router.push({
+            pathname: screen,
+            params: {
+                id: selectedTransaction.id,
+                mode: 'edit',
+                amount: selectedTransaction.amount.toString(),
+                category: selectedTransaction.category,
+                description: selectedTransaction.description || '',
+                wallet: selectedTransaction.wallet,
+                is_repeat: selectedTransaction.is_repeat?.toString(),
+            }
+        });
+    };
+
+    const handleDelete = () => {
+        if (!selectedTransaction) return;
+
+        Alert.alert(
+            "Delete Transaction",
+            "Are you sure you want to delete this transaction?",
+            [
+                { text: "Cancel", style: "cancel" },
+                {
+                    text: "Delete",
+                    style: "destructive",
+                    onPress: async () => {
+                        try {
+                            const table = selectedTransaction.type === 'expense' ? 'expenses' : 'income';
+                            const { error } = await supabase
+                                .from(table)
+                                .delete()
+                                .eq('id', selectedTransaction.id);
+
+                            if (error) throw error;
+
+                            setModalVisible(false);
+                            fetchData(); // Refresh data
+                            Alert.alert("Success", "Transaction deleted successfully");
+                        } catch (error) {
+                            console.error("Error deleting transaction:", error);
+                            Alert.alert("Error", "Failed to delete transaction");
+                        }
+                    }
+                }
+            ]
+        );
+    };
+
+    const renderTransactionItem = (transaction) => {
+        return (
+            <TouchableOpacity
+                key={transaction.id}
+                style={styles.transactionItem}
+                onPress={() => handleTransactionPress(transaction)}
+            >
+                <View
+                    style={[
+                        styles.transactionIcon,
+                        { backgroundColor: transaction.backgroundColor },
+                    ]}
+                >
+                    <FontAwesome
+                        name={transaction.icon}
+                        size={24}
+                        color={transaction.iconColor}
+                    />
+                </View>
+                <View style={styles.transactionDetails}>
+                    <Text style={styles.transactionTitle}>{transaction.title}</Text>
+                    <Text style={styles.transactionDescription}>
+                        {transaction.description}
+                    </Text>
+                </View>
+                <View style={styles.transactionRight}>
+                    <Text
+                        style={[
+                            styles.transactionAmount,
+                            { color: transaction.type === 'expense' ? '#FF5555' : '#00D09E' }
+                        ]}
+                    >
+                        {transaction.displayAmount > 0 ? '+' : ''}${Math.abs(transaction.displayAmount)}
+                    </Text>
+                    <Text style={styles.transactionTime}>{transaction.time}</Text>
+                </View>
+            </TouchableOpacity>
+        );
+    }
 
     return (
         <View style={styles.container}>
@@ -88,7 +236,7 @@ export default function HomeScreen() {
 
                     {/* Account Balance */}
                     <Text style={styles.balanceLabel}>Account Balance</Text>
-                    <Text style={styles.balanceAmount}>$9400</Text>
+                    <Text style={styles.balanceAmount}>${balance.toFixed(2)}</Text>
 
                     {/* Income and Expense Cards */}
                     <View style={styles.cardsContainer}>
@@ -99,7 +247,7 @@ export default function HomeScreen() {
                             </View>
                             <View style={styles.cardContent}>
                                 <Text style={styles.cardLabel}>Income</Text>
-                                <Text style={styles.cardAmount}>$5000</Text>
+                                <Text style={styles.cardAmount}>${totalIncome.toFixed(2)}</Text>
                             </View>
                         </View>
 
@@ -110,7 +258,7 @@ export default function HomeScreen() {
                             </View>
                             <View style={styles.cardContent}>
                                 <Text style={styles.cardLabel}>Expenses</Text>
-                                <Text style={styles.cardAmount}>$1200</Text>
+                                <Text style={styles.cardAmount}>${totalExpenses.toFixed(2)}</Text>
                             </View>
                         </View>
                     </View>
@@ -147,51 +295,28 @@ export default function HomeScreen() {
                 <View style={styles.section}>
                     <View style={styles.sectionHeader}>
                         <Text style={styles.sectionTitle}>Recent Transaction</Text>
-                        <TouchableOpacity style={styles.seeAllButton}>
+                        <TouchableOpacity
+                            style={styles.seeAllButton}
+                            onPress={() => router.push("/(tab)/TransactionScreen")}
+                        >
                             <Text style={styles.seeAllText}>See All</Text>
                         </TouchableOpacity>
                     </View>
 
                     {/* Transaction List */}
-                    {transactions.map((transaction) => (
-                        <TouchableOpacity
-                            key={transaction.id}
-                            style={styles.transactionItem}
-                            onPress={() => {
-                                router.push("/(Common)/DetailsScreen")
-                            }}
-                        >
-                            <View
-                                style={[
-                                    styles.transactionIcon,
-                                    { backgroundColor: transaction.backgroundColor },
-                                ]}
-                            >
-                                <FontAwesome
-                                    name={transaction.icon}
-                                    size={24}
-                                    color={transaction.iconColor}
-                                />
-                            </View>
-                            <View style={styles.transactionDetails}>
-                                <Text style={styles.transactionTitle}>{transaction.title}</Text>
-                                <Text style={styles.transactionDescription}>
-                                    {transaction.description}
-                                </Text>
-                            </View>
-                            <View style={styles.transactionRight}>
-                                <Text style={styles.transactionAmount}>
-                                    {transaction.amount > 0 ? '+' : ''}${Math.abs(transaction.amount)}
-                                </Text>
-                                <Text style={styles.transactionTime}>{transaction.time}</Text>
-                            </View>
-                        </TouchableOpacity>
-                    ))}
+                    {recentTransactions.map(renderTransactionItem)}
                 </View>
 
                 {/* Extra padding for bottom tab bar */}
                 <View style={{ height: 100 }} />
             </ScrollView>
+
+            <TransactionActionModal
+                visible={modalVisible}
+                onClose={() => setModalVisible(false)}
+                onEdit={handleEdit}
+                onDelete={handleDelete}
+            />
         </View>
     );
 }
