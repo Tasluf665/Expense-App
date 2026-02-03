@@ -9,26 +9,32 @@ import {
     TextInput,
     KeyboardAvoidingView,
     Platform,
+    Alert,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import FontAwesome from '@expo/vector-icons/FontAwesome';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
+import { useSelector } from 'react-redux';
+import { supabase } from '../../lib/supabase';
 
 export default function DetailsScreen() {
     const router = useRouter();
     const [showEditModal, setShowEditModal] = useState(false);
+    const currencySymbol = useSelector((state) => state.currency.symbol);
+
+    const params = useLocalSearchParams();
 
     // Sample transaction data (can be passed as params)
     const [transaction, setTransaction] = useState({
-        type: 'Expense',
-        amount: 120,
-        description: 'Buy some grocery',
-        date: 'Saturday 4 June 2021',
-        time: '16:20',
-        category: 'Shopping',
-        wallet: 'Wallet',
+        type: params.type || 'Expense',
+        amount: params.amount || 120,
+        description: params.description || 'Buy some grocery',
+        date: params.date || 'Saturday 4 June 2021',
+        time: params.time || '16:20',
+        category: params.category || 'Shopping',
+        wallet: params.wallet || 'Wallet',
         detailedDescription: 'Amet minim mollit non deserunt ullamco est sit aliqua dolor do amet sint. Velit officia consequat duis enim velit mollit. Exercitation veniam consequat sunt nostrud amet.',
-        isExpense: true,
+        isExpense: params.isExpense === 'true' || params.isExpense === true,
     });
 
     // Edit modal state
@@ -40,20 +46,25 @@ export default function DetailsScreen() {
     const [showCategoryDropdown, setShowCategoryDropdown] = useState(false);
     const [showWalletDropdown, setShowWalletDropdown] = useState(false);
 
-    const categories = [
-        { id: 1, name: 'Food', icon: 'cutlery' },
-        { id: 2, name: 'Shopping', icon: 'shopping-bag' },
-        { id: 3, name: 'Transport', icon: 'car' },
-        { id: 4, name: 'Entertainment', icon: 'film' },
-        { id: 5, name: 'Bills', icon: 'file-text' },
-        { id: 6, name: 'Other', icon: 'ellipsis-h' },
-    ];
+    const [categories, setCategories] = useState([]);
+    const [wallets, setWallets] = useState([]);
+    const [loading, setLoading] = useState(false);
 
-    const wallets = [
-        { id: 1, name: 'Cash' },
-        { id: 2, name: 'Debit Card' },
-        { id: 3, name: 'Credit Card' },
-    ];
+    // Fetch Lists for Dropdowns
+    React.useEffect(() => {
+        const fetchData = async () => {
+            try {
+                const { data: catData } = await supabase.from('categories').select('*');
+                if (catData) setCategories(catData);
+
+                const { data: wallData } = await supabase.from('wallets').select('*');
+                if (wallData) setWallets(wallData);
+            } catch (e) {
+                console.error("Error fetching lists", e);
+            }
+        };
+        fetchData();
+    }, []);
 
     const handleEditPress = () => {
         setEditAmount(String(transaction.amount));
@@ -63,15 +74,118 @@ export default function DetailsScreen() {
         setShowEditModal(true);
     };
 
-    const handleSaveChanges = () => {
-        setTransaction({
-            ...transaction,
-            amount: parseInt(editAmount),
-            description: editDescription,
-            category: selectedCategory,
-            wallet: selectedWallet,
-        });
-        setShowEditModal(false);
+    const handleSaveChanges = async () => {
+        setLoading(true);
+        try {
+            // Find wallet_id for the selected wallet name
+            const walletObj = wallets.find(w => w.name === selectedWallet);
+            const newWalletId = walletObj ? walletObj.id : null;
+
+            // Determine table
+            let table = 'expenses';
+            if (transaction.type === 'Income') table = 'income';
+            if (transaction.type === 'Transfer') table = 'transfers';
+
+            if (table === 'transfers') {
+                // For now, transfers just update the record, complex balance logic skipped for MVP
+                const { error } = await supabase
+                    .from(table)
+                    .update({
+                        amount: parseFloat(editAmount),
+                        description: editDescription,
+                        // Wallet update not supported for transfer edits in this simple view yet
+                    })
+                    .eq('id', params.id);
+                if (error) throw error;
+            } else {
+                // Fetch ORIGINAL transaction to get old amount and old wallet_id
+                const { data: oldData, error: fetchError } = await supabase
+                    .from(table)
+                    .select('wallet_id, amount')
+                    .eq('id', params.id)
+                    .single();
+
+                if (fetchError) throw fetchError;
+
+                const oldAmount = parseFloat(oldData.amount);
+                const newAmount = parseFloat(editAmount);
+                const oldWalletId = oldData.wallet_id;
+
+                // Update Transaction
+                const updatePayload = {
+                    amount: newAmount,
+                    description: editDescription,
+                    category: selectedCategory,
+                };
+                if (newWalletId) updatePayload.wallet_id = newWalletId;
+
+                const { error: updateError } = await supabase
+                    .from(table)
+                    .update(updatePayload)
+                    .eq('id', params.id);
+
+                if (updateError) throw updateError;
+
+
+                // Update Wallet Balances (Handled by DB Triggers now)
+            }
+
+            // Update local state
+            setTransaction({
+                ...transaction,
+                amount: parseFloat(editAmount),
+                description: editDescription,
+                category: selectedCategory,
+                wallet: selectedWallet,
+            });
+            setShowEditModal(false);
+            Alert.alert("Success", "Transaction and wallet balance updated!");
+        } catch (error) {
+            console.error('Error updating transaction:', error);
+            alert("Failed to update transaction.");
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleDeleteTransaction = async () => {
+        Alert.alert(
+            "Delete Transaction",
+            "Are you sure you want to delete this transaction?",
+            [
+                {
+                    text: "Cancel",
+                    style: "cancel"
+                },
+                {
+                    text: "Delete",
+                    style: "destructive",
+                    onPress: async () => {
+                        setLoading(true);
+                        try {
+                            let table = 'expenses';
+                            if (transaction.type === 'Income') table = 'income';
+                            if (transaction.type === 'Transfer') table = 'transfers';
+
+                            const { error } = await supabase
+                                .from(table)
+                                .delete()
+                                .eq('id', params.id);
+
+                            if (error) throw error;
+
+                            alert("Transaction deleted successfully!");
+                            router.back();
+                        } catch (error) {
+                            console.error('Error deleting transaction:', error);
+                            alert("Failed to delete transaction.");
+                        } finally {
+                            setLoading(false);
+                        }
+                    }
+                }
+            ]
+        );
     };
 
     return (
@@ -94,19 +208,18 @@ export default function DetailsScreen() {
                             <FontAwesome name="arrow-left" size={24} color="#FFFFFF" />
                         </TouchableOpacity>
                         <Text style={styles.headerTitle}>Detail Transaction</Text>
-                        <TouchableOpacity>
+                        <TouchableOpacity onPress={handleDeleteTransaction}>
                             <FontAwesome name="trash" size={24} color="#FFFFFF" />
                         </TouchableOpacity>
                     </View>
 
                     {/* Amount */}
                     <View style={styles.amountSection}>
-                        <Text style={styles.amountLabel}>${transaction.amount}</Text>
+                        <Text style={styles.amountLabel}>{currencySymbol}{transaction.amount}</Text>
                     </View>
 
                     {/* Description and Date/Time */}
                     <View style={styles.descriptionSection}>
-                        <Text style={styles.descriptionText}>{transaction.description}</Text>
                         <Text style={styles.dateTimeText}>
                             {transaction.date} {transaction.time}
                         </Text>
@@ -140,7 +253,7 @@ export default function DetailsScreen() {
                     <View style={styles.descriptionSection2}>
                         <Text style={styles.descriptionTitle}>Description</Text>
                         <Text style={styles.descriptionContent}>
-                            {transaction.detailedDescription}
+                            {transaction.description}
                         </Text>
                     </View>
 
@@ -188,7 +301,7 @@ export default function DetailsScreen() {
                             <View style={styles.editSection}>
                                 <Text style={styles.editSectionLabel}>Amount</Text>
                                 <View style={styles.amountInputContainer}>
-                                    <Text style={styles.currencySymbol}>$</Text>
+                                    <Text style={styles.currencySymbol}>{currencySymbol}</Text>
                                     <TextInput
                                         style={styles.amountEditInput}
                                         placeholder="0"
@@ -283,27 +396,7 @@ export default function DetailsScreen() {
                                 )}
                             </View>
 
-                            {/* Repeat Toggle */}
-                            <View style={styles.editRepeatContainer}>
-                                <View>
-                                    <Text style={styles.editRepeatLabel}>Repeat</Text>
-                                    <Text style={styles.editRepeatSubtext}>Repeat transaction</Text>
-                                </View>
-                                <TouchableOpacity
-                                    style={[
-                                        styles.editToggle,
-                                        isRepeatEnabled && styles.editToggleActive,
-                                    ]}
-                                    onPress={() => setIsRepeatEnabled(!isRepeatEnabled)}
-                                >
-                                    <View
-                                        style={[
-                                            styles.editToggleCircle,
-                                            isRepeatEnabled && styles.editToggleCircleActive,
-                                        ]}
-                                    />
-                                </TouchableOpacity>
-                            </View>
+
                         </ScrollView>
 
                         {/* Action Buttons */}
@@ -315,10 +408,11 @@ export default function DetailsScreen() {
                                 <Text style={styles.cancelButtonText}>Cancel</Text>
                             </TouchableOpacity>
                             <TouchableOpacity
-                                style={styles.saveButton}
+                                style={[styles.saveButton, { opacity: loading ? 0.7 : 1 }]}
                                 onPress={handleSaveChanges}
+                                disabled={loading}
                             >
-                                <Text style={styles.saveButtonText}>Save Changes</Text>
+                                <Text style={styles.saveButtonText}>{loading ? "Saving..." : "Save Changes"}</Text>
                             </TouchableOpacity>
                         </View>
                     </View>

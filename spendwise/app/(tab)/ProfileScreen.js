@@ -1,13 +1,17 @@
 import React, { useState, useCallback } from 'react';
-import { StyleSheet, Text, View, TouchableOpacity, Image, Alert } from 'react-native';
+import { StyleSheet, Text, View, TouchableOpacity, Alert } from 'react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
 import FontAwesome from '@expo/vector-icons/FontAwesome';
 import { supabase } from '../../lib/supabase';
+import { useSelector } from 'react-redux';
+import { getColors } from '../../utils/themeSlice';
 
 export default function ProfileScreen() {
     const router = useRouter();
     const [user, setUser] = useState(null);
     const [loading, setLoading] = useState(true);
+    const themeMode = useSelector((state) => state.theme.mode);
+    const colors = getColors(themeMode);
 
     useFocusEffect(
         useCallback(() => {
@@ -51,41 +55,40 @@ export default function ProfileScreen() {
     };
 
     const renderMenuItem = (icon, title, onPress, isDestructive = false) => (
-        <TouchableOpacity style={styles.menuItem} onPress={onPress}>
+        <TouchableOpacity style={[styles.menuItem, { backgroundColor: colors.cardBackground }]} onPress={onPress}>
             <View style={[styles.menuIconContainer, isDestructive && styles.destructiveIconBase]}>
                 <FontAwesome
                     name={icon}
                     size={24}
-                    color={isDestructive ? '#FF5555' : '#7F3DFF'}
+                    color={isDestructive ? '#FF5555' : colors.primary}
                 />
             </View>
-            <Text style={styles.menuText}>{title}</Text>
+            <Text style={[styles.menuText, { color: colors.textPrimary }]}>{title}</Text>
         </TouchableOpacity>
     );
 
     return (
-        <View style={styles.container}>
+        <View style={[styles.container, { backgroundColor: colors.background }]}>
             {/* Header */}
             <View style={styles.header}>
+
                 <View style={styles.userInfo}>
-                    <Text style={styles.usernameLabel}>Username</Text>
-                    <Text style={styles.userName}>
+                    <Text style={[styles.usernameLabel, { color: colors.textSecondary }]}>Username</Text>
+                    <Text style={[styles.userName, { color: colors.textPrimary }]}>
                         {user?.user_metadata?.first_name
                             ? `${user.user_metadata.first_name} ${user.user_metadata.last_name || ''}`
-                            : user?.email?.split('@')[0] || 'User'}
+                            : user?.email?.split('@')[0] || 'Iriana Saliha'}
                     </Text>
                 </View>
-                <TouchableOpacity onPress={() => Alert.alert("Edit Profile", "Feature coming soon!")}>
-                    <FontAwesome name="pencil-square-o" size={24} color="#000" />
-                </TouchableOpacity>
+
             </View>
 
             {/* Menu List */}
-            <View style={styles.menuContainer}>
-                {renderMenuItem("folder-o", "Account", () => Alert.alert("Account", "Feature coming soon!"))}
-                <View style={styles.divider} />
-                {renderMenuItem("cog", "Settings", () => Alert.alert("Settings", "Feature coming soon!"))}
-                <View style={styles.divider} />
+            <View style={[styles.menuContainer, { backgroundColor: colors.cardBackground }]}>
+                {renderMenuItem("credit-card", "Account", () => router.push('/(Common)/AccountScreen'))}
+                <View style={[styles.divider, { backgroundColor: colors.border }]} />
+                {renderMenuItem("cog", "Settings", () => router.push('/(Common)/SettingsScreen'))}
+                <View style={[styles.divider, { backgroundColor: colors.border }]} />
                 {renderMenuItem("sign-out", "Logout", handleLogout, true)}
             </View>
         </View>
@@ -95,17 +98,16 @@ export default function ProfileScreen() {
 const styles = StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: '#F6F6F6', // Light gray bg like the design
+        backgroundColor: '#F6F6F6',
         paddingHorizontal: 20,
         paddingTop: 60,
     },
     header: {
         flexDirection: 'row',
-        justifyContent: 'space-between',
         alignItems: 'center',
         marginBottom: 40,
-        paddingHorizontal: 10,
     },
+
     userInfo: {
         flex: 1,
     },
@@ -115,22 +117,23 @@ const styles = StyleSheet.create({
         marginBottom: 4,
     },
     userName: {
-        fontSize: 24,
+        fontSize: 18,
         fontWeight: 'bold',
-        color: '#000',
+        color: '#161719',
     },
     menuContainer: {
         backgroundColor: '#fff',
         borderRadius: 20,
         paddingVertical: 10,
+        // Shadow/Elevation
         shadowColor: "#000",
         shadowOffset: {
             width: 0,
             height: 2,
         },
         shadowOpacity: 0.05,
-        shadowRadius: 3.84,
-        elevation: 5,
+        shadowRadius: 10,
+        elevation: 2,
     },
     menuItem: {
         flexDirection: 'row',
@@ -141,18 +144,18 @@ const styles = StyleSheet.create({
     menuIconContainer: {
         width: 48,
         height: 48,
-        borderRadius: 12,
-        backgroundColor: '#EEE5FF', // Light purple bg for icons
+        borderRadius: 16,
+        backgroundColor: '#EEE5FF',
         justifyContent: 'center',
         alignItems: 'center',
         marginRight: 16,
     },
     destructiveIconBase: {
-        backgroundColor: '#FFE5E5', // Light red for logout
+        backgroundColor: '#FFE2E4',
     },
     menuText: {
         fontSize: 16,
-        fontWeight: '500',
+        fontWeight: '600',
         color: '#292B2D',
     },
     divider: {

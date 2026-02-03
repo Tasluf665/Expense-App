@@ -7,26 +7,56 @@ import {
     ScrollView,
     Dimensions,
     Image,
+    Modal,
+    ActivityIndicator,
 } from 'react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import FontAwesome from '@expo/vector-icons/FontAwesome';
 import { LineChart, PieChart } from 'react-native-gifted-charts';
 import { supabase } from '../../lib/supabase';
+import { useSelector } from 'react-redux';
+import { getColors } from '../../utils/themeSlice';
 import { format } from 'date-fns';
 
 const { width } = Dimensions.get('window');
 
 export default function ExportScreen() {
     const router = useRouter();
+    const currencySymbol = useSelector((state) => state.currency.symbol);
+    const themeMode = useSelector((state) => state.theme.mode);
+    const themeColors = getColors(themeMode);
+    // Helper to generate last 12 months
+    const generateLast12Months = () => {
+        const months = [];
+        const now = new Date();
+        for (let i = 0; i < 12; i++) {
+            const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+            months.push(format(d, 'MMM yyyy'));
+        }
+        return months;
+    };
+    const monthList = generateLast12Months();
+
     const [chartType, setChartType] = useState('line'); // 'line' or 'pie'
     const [transactionType, setTransactionType] = useState('expense'); // 'expense', 'income'
-    const [selectedMonth, setSelectedMonth] = useState('Month');
-    const [totalAmount, setTotalAmount] = useState(0);
-    const [chartData, setChartData] = useState([]);
-    const [transactions, setTransactions] = useState([]); // Raw transaction list
-    const [pieData, setPieData] = useState([]);           // Processed pie data
+    const [timeRange, setTimeRange] = useState(monthList[0]); // Default to current month
+    const [allData, setAllData] = useState([]); // Store ALL fetched data
+
+    // UI State
     const [loading, setLoading] = useState(false);
+    const [showTimeRangeModal, setShowTimeRangeModal] = useState(false);
+    const [showViewModeModal, setShowViewModeModal] = useState(false);
+
+    // Data State
+    const [transactions, setTransactions] = useState([]); // List view data
+    const [pieData, setPieData] = useState([]);
+    const [chartData, setChartData] = useState([]);
+    const [totalAmount, setTotalAmount] = useState(0);
+    const [categoryMapState, setCategoryMapState] = useState({});
+
+    // Sorting
+    const [sortOrder, setSortOrder] = useState('desc'); // 'desc' or 'asc'
 
     // Color Palette
     const colors = {
@@ -39,17 +69,7 @@ export default function ExportScreen() {
         bg: '#FFFFFF',
     };
 
-    useFocusEffect(
-        useCallback(() => {
-            fetchData();
-        }, [transactionType])
-    );
-
-    // Update chart data when chartType changes, without re-fetching if not needed
-    // However, for simplicity, we can just process data again if we have it, 
-    // or just let fetchData handle it. 
-    // The issue was listData being stale. 
-    // Now we will separate the data sources for the list view.
+    // ... imports
 
     const fetchData = async () => {
         setLoading(true);
@@ -59,6 +79,7 @@ export default function ExportScreen() {
 
             const table = transactionType === 'expense' ? 'expenses' : 'income';
 
+            // Fetch Transactions
             const { data, error } = await supabase
                 .from(table)
                 .select('*')
@@ -70,23 +91,29 @@ export default function ExportScreen() {
                 return;
             }
 
-            // Calculate Total
-            const total = data.reduce((sum, item) => sum + Number(item.amount), 0);
-            setTotalAmount(total);
+            // Fetch Categories
+            const { data: fetchedCategories, error: categoryError } = await supabase
+                .from('categories')
+                .select('*');
 
-            // Store raw transactions
-            setTransactions(data.map(item => ({ ...item })).reverse());
-
-            // Process Pie Data regardless of current view, so it's ready
-            const pData = processPieChartData(data, total);
-            setPieData(pData);
-
-            // Update Chart Data based on current type
-            if (chartType === 'line') {
-                processLineChartData(data);
-            } else {
-                setChartData(pData);
+            if (categoryError) {
+                console.error(categoryError);
             }
+
+            const catMap = {};
+            if (fetchedCategories) {
+                fetchedCategories.forEach(c => {
+                    catMap[c.name] = c;
+                });
+            }
+            setCategoryMapState(catMap);
+
+            // Store raw ALL data
+            setAllData(data.map(item => ({ ...item }))); // Keep ascending for charts
+
+            // Set initial transactions (reversed for list)
+            // setTransactions(data.map(item => ({ ...item })).reverse()); 
+            // ^ We will derive display transactions in the useEffect
 
         } catch (error) {
             console.error('Error fetching export data:', error);
@@ -95,38 +122,124 @@ export default function ExportScreen() {
         }
     };
 
-    // Effect to update chart data when switching chart types locally
-    React.useEffect(() => {
-        if (chartType === 'line') {
-            // Re-process line data from transactions (which is reversed in state, so we need to reverse back or just use valid source)
-            // Ideally we should store sorted data.
-            // Let's just re-fetch or keep raw data sorted.
-            // Optimized: keep raw data in state.
-            // But fetchData sets `transactions` as reversed.
-            // Let's just fetch again or ensure we have non-reversed data. 
-            // Simplest: just call fetchData which is cheap enough or refactor to store straight data.
+    // Initial Fetch
+    useFocusEffect(
+        useCallback(() => {
             fetchData();
-        } else {
-            setChartData(pieData);
-        }
-    }, [chartType]);
+        }, [transactionType]) // Refetch if transaction type changes (though we fetch specific table in fetchData)
+    );
 
-    const processLineChartData = (data) => {
-        // Group by day for the chart
-        const points = data.map(item => ({
-            value: Number(item.amount),
-            label: format(new Date(item.created_at), 'd'),
-            dataPointText: '',
+    // Replace the previous useEffect with this main driver
+    React.useEffect(() => {
+        if (!allData || allData.length === 0) return;
+
+        // 1. Filter Logic
+        const filtered = filterDataByTimeRange(allData, timeRange);
+
+        // 2. Update Total
+        const total = filtered.reduce((sum, item) => sum + Number(item.amount), 0);
+        setTotalAmount(total);
+
+        // 3. Update Pie Data (always needed for toggle)
+        const pData = processPieChartData(filtered, total, categoryMapState);
+        setPieData(pData);
+
+        // 4. Update Main Chart Data
+        if (chartType === 'line') {
+            processLineChartData(filtered, categoryMapState);
+        } else {
+            setChartData(pData);
+        }
+
+        // 5. Update List View (Reverse for newest first)
+        setTransactions(filtered.map(i => ({ ...i })).reverse());
+
+    }, [timeRange, chartType, allData, categoryMapState, transactionType]); // re-run when source data changes
+
+
+
+
+    // ... (fetchData keeps fetching everything for the table, but we might want to filter the table too? 
+    // Usually Export/Report screen shows current month by default. 
+    // Let's filter the data passed to the charts and list based on timeRange)
+
+    // Actually, good practice: Fetch everything, then filter in memory if dataset is small, 
+    // OR fetch with date range query. 
+    // Given the previous code fetched all, let's filter in memory for checking.
+    // BUT, the previous code fetched EVERYTHING for the user. That might be heavy.
+    // Let's stick to client-side filtering for now as it matches the pattern.
+
+    const filterDataByTimeRange = (data, range) => {
+        if (!range) return data;
+        try {
+            return data.filter(d => format(new Date(d.created_at), 'MMM yyyy') === range);
+        } catch (e) {
+            console.error("Error filtering by date", e);
+            return data;
+        }
+    };
+
+    // Effect to update chart/list when timeRange or chartType changes
+    React.useEffect(() => {
+        // filter raw transactions first
+        const filtered = filterDataByTimeRange(transactions, timeRange);
+
+        // Update Chart
+        if (chartType === 'line') {
+            processLineChartData(filtered, categoryMapState);
+        } else {
+            // For Pie, we need to recalculate totals based on filtered data
+            // Recalculate Total Amount for the view
+            const newTotal = filtered.reduce((sum, item) => sum + Number(item.amount), 0);
+            setTotalAmount(newTotal);
+            const pData = processPieChartData(filtered, newTotal, categoryMapState);
+            setChartData(pData);
+            setPieData(pData); // Update pieData state as well
+        }
+
+        // We should also theoretically update the 'transactions' list shown in list view 
+        // IF the list view is supposed to only show the selected range.
+        // The current implementation uses 'transactions' state directly in render.
+        // We shouldn't mutate 'transactions' state if it holds 'all' data.
+        // So we need a new state 'displayTransactions' or just derive it.
+        // Let's verify how 'transactions' is populated. 
+        // It's populated in fetchData.
+        // Let's refactor fetchData to store 'allData' and then filter into 'transactions'.
+    }, [timeRange, chartType, transactions]); // transactions dependency needed if we fetch new data
+
+    const processLineChartData = (data, catMap) => {
+        // 1. Aggregate by label
+        const aggregated = {};
+
+        data.forEach(item => {
+            const date = new Date(item.created_at);
+            // Day of month
+            const label = format(date, 'd');
+
+            if (!aggregated[label]) {
+                aggregated[label] = 0;
+            }
+            aggregated[label] += Number(item.amount);
+        });
+
+        // 2. Convert to array
+        let points = Object.keys(aggregated).map(label => ({
+            value: aggregated[label],
+            label: label,
+            dataPointText: aggregated[label].toString(),
         }));
 
+        // 3. Sort numerically
+        points.sort((a, b) => Number(a.label) - Number(b.label));
+
         if (points.length === 0) {
-            setChartData([{ value: 0 }, { value: 0 }]);
+            setChartData([{ value: 0 }, { value: 0 }]); // Empty state
         } else {
             setChartData(points);
         }
     };
 
-    const processPieChartData = (data, total) => {
+    const processPieChartData = (data, total, catMap) => { // Accept catMap
         const categoryMap = {};
 
         data.forEach(item => {
@@ -136,30 +249,26 @@ export default function ExportScreen() {
             categoryMap[item.category] += Number(item.amount);
         });
 
-        // Predefined colors for categories to match UI
-        const categoryColors = {
-            'Shopping': '#FCAE12',
-            'Subscription': '#7F3DFF',
-            'Food': '#FD3C4A',
-            'Transport': '#3B82F6',
-            'Salary': '#00A86B',
-            'Passive Income': '#00A86B',
-            'Other': '#EEE5FF',
-        };
+        const pieResult = Object.keys(categoryMap).map((cat, index) => {
+            // Get color from dynamic categories or fallback
+            const dynamicColor = catMap && catMap[cat] ? catMap[cat].color : null;
 
-        const pieResult = Object.keys(categoryMap).map((cat, index) => ({
-            value: categoryMap[cat],
-            color: categoryColors[cat] || `hsl(${index * 60}, 70%, 50%)`,
-            text: total > 0 ? `${((categoryMap[cat] / total) * 100).toFixed(0)}%` : '0%',
-            category: cat,
-            amount: categoryMap[cat],
-            focused: index === 0,
-        }));
+            return {
+                value: categoryMap[cat],
+                color: dynamicColor || `hsl(${index * 40}, 70%, 50%)`, // Use HSL for unique colors if unknown
+                text: total > 0 ? `${((categoryMap[cat] / total) * 100).toFixed(0)}%` : '0%',
+                category: cat,
+                amount: categoryMap[cat],
+                focused: index === 0,
+            };
+        });
 
         return pieResult.sort((a, b) => b.value - a.value);
     };
 
     const getCategoryIcon = (category) => {
+        if (categoryMapState[category]?.icon) return categoryMapState[category].icon;
+
         const map = {
             'Shopping': 'shopping-bag',
             'Food': 'cutlery',
@@ -172,7 +281,9 @@ export default function ExportScreen() {
         return map[category] || 'ellipsis-h';
     };
 
-    const getCategoryColor = (category) => {
+    const getCategoryColor = (category) => { // Helper if needed elsewhere, though chart logic handles its own colors
+        if (categoryMapState[category]?.color) return categoryMapState[category].color;
+
         const categoryColors = {
             'Shopping': '#FCAE12',
             'Subscription': '#7F3DFF',
@@ -188,48 +299,87 @@ export default function ExportScreen() {
     const renderHeader = () => (
         <View style={styles.header}>
             <TouchableOpacity onPress={() => router.back()}>
-                <FontAwesome name="arrow-left" size={24} color="black" />
+                <FontAwesome name="arrow-left" size={24} color={themeColors.textPrimary} />
             </TouchableOpacity>
-            <Text style={styles.headerTitle}>Financial Report</Text>
+            <Text style={[styles.headerTitle, { color: themeColors.textPrimary }]}>Financial Report</Text>
             <View style={{ width: 24 }} />
         </View>
     );
 
     const renderControls = () => (
         <View style={styles.controlsRow}>
-            <TouchableOpacity style={styles.monthSelector}>
-                <FontAwesome name="angle-down" size={18} color={colors.primary} />
-                <Text style={styles.monthText}>{selectedMonth}</Text>
+            <TouchableOpacity
+                style={[styles.monthSelector, { backgroundColor: themeColors.cardBackground, borderColor: themeColors.border }]}
+                onPress={() => setShowTimeRangeModal(true)}
+            >
+                <FontAwesome name="angle-down" size={18} color={themeColors.primary} />
+                <Text style={[styles.monthText, { color: themeColors.primary }]}>{timeRange}</Text>
             </TouchableOpacity>
 
-            <View style={styles.chartToggle}>
+            <View style={[styles.chartToggle, { backgroundColor: themeColors.cardBackground }]}>
                 <TouchableOpacity
-                    style={[styles.chartBtn, chartType === 'line' && styles.chartBtnActive]}
+                    style={[styles.chartBtn, { backgroundColor: chartType === 'line' ? themeColors.primary : themeColors.cardBackground }]}
                     onPress={() => setChartType('line')}
                 >
-                    <FontAwesome name="line-chart" size={16} color={chartType === 'line' ? '#fff' : colors.primary} />
+                    <FontAwesome name="line-chart" size={16} color={chartType === 'line' ? '#fff' : themeColors.primary} />
                 </TouchableOpacity>
                 <TouchableOpacity
-                    style={[styles.chartBtn, chartType === 'pie' && styles.chartBtnActive]}
+                    style={[styles.chartBtn, { backgroundColor: chartType === 'pie' ? themeColors.primary : themeColors.cardBackground }]}
                     onPress={() => setChartType('pie')}
                 >
-                    <FontAwesome name="pie-chart" size={16} color={chartType === 'pie' ? '#fff' : colors.primary} />
+                    <FontAwesome name="pie-chart" size={16} color={chartType === 'pie' ? '#fff' : themeColors.primary} />
                 </TouchableOpacity>
             </View>
         </View>
     );
 
+
+
+    const handleSortPress = () => {
+        const newOrder = sortOrder === 'desc' ? 'asc' : 'desc';
+        setSortOrder(newOrder);
+
+        if (chartType === 'line') {
+            const sorted = [...transactions].sort((a, b) => {
+                return newOrder === 'desc'
+                    ? Number(b.amount) - Number(a.amount)
+                    : Number(a.amount) - Number(b.amount);
+            });
+            setTransactions(sorted);
+        } else {
+            const sorted = [...pieData].sort((a, b) => {
+                return newOrder === 'desc'
+                    ? b.value - a.value
+                    : a.value - b.value;
+            });
+            setPieData(sorted);
+        }
+    };
+
+    const handleViewModeSelect = (type) => { // 'Transaction' or 'Category'
+        setChartType(type === 'Transaction' ? 'line' : 'pie');
+        setShowViewModeModal(false);
+    };
+
+    if (loading) {
+        return (
+            <View style={[styles.loadingContainer, { backgroundColor: themeColors.background }]}>
+                <ActivityIndicator size="large" color={themeColors.primary} />
+            </View>
+        );
+    }
+
     return (
-        <View style={styles.container}>
+        <View style={[styles.container, { backgroundColor: themeColors.background }]}>
             {renderHeader()}
 
             <ScrollView showsVerticalScrollIndicator={false}>
                 {renderControls()}
 
-                <Text style={styles.totalLabel}>
+                <Text style={[styles.totalLabel, { color: themeColors.textSecondary }]}>
                     Total {transactionType === 'expense' ? 'Expense' : 'Income'}
                 </Text>
-                <Text style={styles.totalAmount}>$ {totalAmount.toFixed(0)}</Text>
+                <Text style={[styles.totalAmount, { color: themeColors.textPrimary }]}>{currencySymbol} {totalAmount.toFixed(0)}</Text>
 
                 {/* CHART AREA */}
                 <View style={styles.chartContainer}>
@@ -262,11 +412,11 @@ export default function ExportScreen() {
                                 sectionAutoFocus
                                 radius={90}
                                 innerRadius={60}
-                                innerCircleColor={'#fff'}
+                                innerCircleColor={themeColors.background}
                                 centerLabelComponent={() => (
                                     <View style={{ justifyContent: 'center', alignItems: 'center' }}>
-                                        <Text style={{ fontSize: 22, color: 'black', fontWeight: 'bold' }}>
-                                            ${totalAmount.toFixed(0)}
+                                        <Text style={{ fontSize: 22, color: themeColors.textPrimary, fontWeight: 'bold' }}>
+                                            {currencySymbol}{totalAmount.toFixed(0)}
                                         </Text>
                                     </View>
                                 )}
@@ -276,29 +426,35 @@ export default function ExportScreen() {
                 </View>
 
                 {/* TOGGLE */}
-                <View style={styles.toggleContainer}>
+                <View style={[styles.toggleContainer, { backgroundColor: themeColors.cardBackground }]}>
                     <TouchableOpacity
-                        style={[styles.toggleBtn, transactionType === 'expense' && styles.toggleBtnActive]}
+                        style={[styles.toggleBtn, { backgroundColor: transactionType === 'expense' ? themeColors.primary : themeColors.cardBackground }]}
                         onPress={() => setTransactionType('expense')}
                     >
-                        <Text style={[styles.toggleText, transactionType === 'expense' && styles.toggleTextActive]}>Expense</Text>
+                        <Text style={[styles.toggleText, { color: transactionType === 'expense' ? '#FFFFFF' : themeColors.textPrimary }]}>Expense</Text>
                     </TouchableOpacity>
                     <TouchableOpacity
-                        style={[styles.toggleBtn, transactionType === 'income' && styles.toggleBtnActive]}
+                        style={[styles.toggleBtn, { backgroundColor: transactionType === 'income' ? themeColors.primary : themeColors.cardBackground }]}
                         onPress={() => setTransactionType('income')}
                     >
-                        <Text style={[styles.toggleText, transactionType === 'income' && styles.toggleTextActive]}>Income</Text>
+                        <Text style={[styles.toggleText, { color: transactionType === 'income' ? '#FFFFFF' : themeColors.textPrimary }]}>Income</Text>
                     </TouchableOpacity>
                 </View>
 
                 {/* LIST HEADER */}
                 <View style={styles.listHeader}>
-                    <TouchableOpacity style={styles.filterBtn}>
-                        <FontAwesome name="angle-down" size={16} color={colors.gray} />
-                        <Text style={styles.filterText}>{chartType === 'line' ? 'Transaction' : 'Category'}</Text>
+                    <TouchableOpacity
+                        style={styles.filterBtn}
+                        onPress={() => setShowViewModeModal(true)}
+                    >
+                        <FontAwesome name="angle-down" size={16} color={themeColors.textSecondary} />
+                        <Text style={[styles.filterText, { color: themeColors.textSecondary }]}>{chartType === 'line' ? 'Transaction' : 'Category'}</Text>
                     </TouchableOpacity>
-                    <TouchableOpacity style={styles.sortBtn}>
-                        <FontAwesome name="sort-amount-desc" size={20} color="black" />
+                    <TouchableOpacity
+                        style={styles.sortBtn}
+                        onPress={handleSortPress}
+                    >
+                        <FontAwesome name={sortOrder === 'desc' ? "sort-amount-desc" : "sort-amount-asc"} size={20} color={themeColors.textPrimary} />
                     </TouchableOpacity>
                 </View>
 
@@ -307,20 +463,20 @@ export default function ExportScreen() {
                     {chartType === 'line' ? (
                         // TRANSACTION LIST
                         transactions.map((item, index) => (
-                            <View key={index} style={styles.transactionItem}>
-                                <View style={[styles.iconContainer, { backgroundColor: '#FFFAE6' }]}>
-                                    <FontAwesome name={getCategoryIcon(item.category)} size={24} color="#FCAE12" />
+                            <View key={index} style={[styles.transactionItem, { backgroundColor: themeColors.cardBackground }]}>
+                                <View style={[styles.iconContainer, { backgroundColor: (categoryMapState[item.category]?.color || '#FCAE12') + '20' }]}>
+                                    <FontAwesome name={getCategoryIcon(item.category)} size={24} color={categoryMapState[item.category]?.color || '#FCAE12'} />
                                 </View>
                                 <View style={{ flex: 1, marginLeft: 12 }}>
-                                    <Text style={styles.itemTitle}>{item.category}</Text>
-                                    <Text style={styles.itemSubtitle}>{item.description}</Text>
+                                    <Text style={[styles.itemTitle, { color: themeColors.textPrimary }]}>{item.category}</Text>
+                                    <Text style={[styles.itemSubtitle, { color: themeColors.textSecondary }]}>{item.description}</Text>
                                 </View>
                                 <View>
-                                    <Text style={[styles.itemAmount, { color: colors.expense }]}>
-                                        - ${item.amount}
+                                    <Text style={[styles.itemAmount, { color: transactionType === 'expense' ? colors.expense : colors.income }]}>
+                                        {transactionType === 'expense' ? '-' : '+'} {currencySymbol}{item.amount}
                                     </Text>
-                                    <Text style={styles.itemTime}>
-                                        {item.created_at ? format(new Date(item.created_at), 'hh:mm a') : ''}
+                                    <Text style={[styles.itemTime, { color: themeColors.textSecondary }]}>
+                                        {item.created_at ? format(new Date(item.created_at), 'dd MMM, hh:mm a') : ''}
                                     </Text>
                                 </View>
                             </View>
@@ -331,9 +487,9 @@ export default function ExportScreen() {
                             <View key={index} style={styles.categoryItem}>
                                 <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8 }}>
                                     <View style={[styles.categoryDot, { backgroundColor: item.color }]} />
-                                    <Text style={styles.categoryName}>{item.category}</Text>
-                                    <Text style={[styles.categoryAmount, { color: colors.expense }]}>
-                                        - ${item.amount}
+                                    <Text style={[styles.categoryName, { color: themeColors.textPrimary }]}>{item.category}</Text>
+                                    <Text style={[styles.categoryAmount, { color: transactionType === 'expense' ? colors.expense : colors.income }]}>
+                                        {transactionType === 'expense' ? '-' : '+'} {currencySymbol}{item.amount}
                                     </Text>
                                 </View>
                                 <View style={styles.progressBarBg}>
@@ -349,8 +505,71 @@ export default function ExportScreen() {
                     )}
                 </View>
 
-                <View style={{ height: 100 }} />
+                <View style={{ height: 120 }} />
             </ScrollView>
+
+            {/* Time Range Selection Modal */}
+            <Modal
+                visible={showTimeRangeModal}
+                transparent={true}
+                animationType="fade"
+                onRequestClose={() => setShowTimeRangeModal(false)}
+            >
+                <TouchableOpacity
+                    style={styles.modalOverlay}
+                    activeOpacity={1}
+                    onPress={() => setShowTimeRangeModal(false)}
+                >
+                    <View style={[styles.menuPopover, { width: 150, maxHeight: 400 }]}>
+                        <ScrollView showsVerticalScrollIndicator={false}>
+                            {monthList.map((month, index) => (
+                                <View key={month}>
+                                    <TouchableOpacity
+                                        style={styles.menuItem}
+                                        onPress={() => { setTimeRange(month); setShowTimeRangeModal(false); }}
+                                    >
+                                        <Text style={[styles.menuText, timeRange === month && styles.menuTextActive]}>{month}</Text>
+                                        {timeRange === month && <FontAwesome name="check" size={14} color="#7F3DFF" />}
+                                    </TouchableOpacity>
+                                    {index < monthList.length - 1 && <View style={styles.menuDivider} />}
+                                </View>
+                            ))}
+                        </ScrollView>
+                    </View>
+                </TouchableOpacity>
+            </Modal>
+
+            {/* View Mode Selection Modal */}
+            <Modal
+                visible={showViewModeModal}
+                transparent={true}
+                animationType="fade"
+                onRequestClose={() => setShowViewModeModal(false)}
+            >
+                <TouchableOpacity
+                    style={styles.modalOverlay}
+                    activeOpacity={1}
+                    onPress={() => setShowViewModeModal(false)}
+                >
+                    <View style={styles.menuPopover}>
+                        <TouchableOpacity
+                            style={styles.menuItem}
+                            onPress={() => handleViewModeSelect('Transaction')}
+                        >
+                            <Text style={[styles.menuText, chartType === 'line' && styles.menuTextActive]}>Transaction</Text>
+                            {chartType === 'line' && <FontAwesome name="check" size={14} color="#7F3DFF" />}
+                        </TouchableOpacity>
+                        <View style={styles.menuDivider} />
+                        <TouchableOpacity
+                            style={styles.menuItem}
+                            onPress={() => handleViewModeSelect('Category')}
+                        >
+                            <Text style={[styles.menuText, chartType === 'pie' && styles.menuTextActive]}>Category</Text>
+                            {chartType === 'pie' && <FontAwesome name="check" size={14} color="#7F3DFF" />}
+                        </TouchableOpacity>
+                    </View>
+                </TouchableOpacity>
+            </Modal>
         </View>
     );
 }
@@ -543,5 +762,48 @@ const styles = StyleSheet.create({
     progressBarFill: {
         height: '100%',
         borderRadius: 5,
+    },
+    modalOverlay: {
+        flex: 1,
+        backgroundColor: 'rgba(0, 0, 0, 0.2)',
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    loadingContainer: {
+        flex: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    menuPopover: {
+        backgroundColor: '#fff',
+        borderRadius: 12,
+        width: 200,
+        paddingVertical: 8,
+        // Shadow
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.1,
+        shadowRadius: 12,
+        elevation: 5,
+    },
+    menuItem: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        paddingVertical: 12,
+        paddingHorizontal: 16,
+    },
+    menuText: {
+        fontSize: 16,
+        color: '#0D0E0F',
+    },
+    menuTextActive: {
+        color: '#7F3DFF',
+        fontWeight: '600',
+    },
+    menuDivider: {
+        height: 1,
+        backgroundColor: '#F1F1FA',
+        marginHorizontal: 16,
     },
 });

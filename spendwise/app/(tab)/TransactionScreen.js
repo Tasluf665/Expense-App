@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
     View,
     Text,
@@ -10,6 +10,8 @@ import {
     FlatList,
     Alert,
 } from 'react-native';
+import { useSelector } from 'react-redux';
+import { getColors } from '../../utils/themeSlice';
 import FontAwesome from '@expo/vector-icons/FontAwesome';
 
 import { useFocusEffect, router } from 'expo-router';
@@ -19,48 +21,165 @@ import { supabase } from '../../lib/supabase';
 import { format, isToday, isYesterday, parseISO } from 'date-fns';
 
 export default function TransactionScreen() {
-    const [selectedMonth, setSelectedMonth] = useState('Month');
+    // Helper to generate last 12 months
+    const generateLast12Months = () => {
+        const months = [];
+        const now = new Date();
+        for (let i = 0; i < 12; i++) {
+            const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+            months.push(format(d, 'MMM yyyy'));
+        }
+        return months;
+    };
+
+    const months = generateLast12Months();
+    const [selectedMonth, setSelectedMonth] = useState(months[0]);
     const [showMonthModal, setShowMonthModal] = useState(false);
     const [showFilterModal, setShowFilterModal] = useState(false);
     const [filterBy, setFilterBy] = useState(null);
     const [sortBy, setSortBy] = useState(null);
     const [selectedCategories, setSelectedCategories] = useState([]);
     const [transactionSections, setTransactionSections] = useState([]);
+    const [rawTransactions, setRawTransactions] = useState([]); // Declared rawTransactions state at the top
     const [loading, setLoading] = useState(true);
+    const currencySymbol = useSelector((state) => state.currency.symbol);
+    const themeMode = useSelector((state) => state.theme.mode);
+    const colors = getColors(themeMode);
 
     // Modal State
     const [modalVisible, setModalVisible] = useState(false);
     const [selectedTransaction, setSelectedTransaction] = useState(null);
 
-    const months = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
-
     const filterOptions = ['Income', 'Expense', 'Transfer'];
     const sortOptions = ['Highest', 'Lowest', 'Newest', 'Oldest'];
-    const categories = ['Food', 'Shopping', 'Transportation', 'Entertainment', 'Bills', 'Salary', 'Bonus', 'Other'];
+    // const categories = ['Food', 'Shopping', 'Transportation', 'Entertainment', 'Bills', 'Salary', 'Bonus', 'Other']; // Removed hardcoded list
 
-    useFocusEffect(
-        useCallback(() => {
-            fetchTransactions();
-        }, [])
-    );
+    const [categories, setCategories] = useState([]); // Dynamic categories state
 
-    const getCategoryStyles = (category, type) => {
-        const styles = {
+    const getCategoryStyles = (categoryName, type) => {
+        const foundCategory = categories.find(c => c.name === categoryName && (!type || c.type === type || !c.type));
+
+        if (foundCategory) {
+            return {
+                icon: foundCategory.icon,
+                color: foundCategory.color,
+                bg: foundCategory.color + '20'
+            };
+        }
+
+        const defaults = {
             'Food': { icon: 'cutlery', color: '#FF5555', bg: '#FFE6E6' },
             'Shopping': { icon: 'shopping-bag', color: '#FFA500', bg: '#FFF4E6' },
-            'Transport': { icon: 'car', color: '#3B82F6', bg: '#E6F2FF' },
-            'Entertainment': { icon: 'film', color: '#7C3FED', bg: '#F0E6FF' },
-            'Bills': { icon: 'file-text', color: '#EF4444', bg: '#FEE2E2' },
-            'Salary': { icon: 'dollar', color: '#00D09E', bg: '#E6F9F5' },
-            'Bonus': { icon: 'gift', color: '#F59E0B', bg: '#FEF3C7' },
-            'Freelance': { icon: 'laptop', color: '#6366F1', bg: '#E0E7FF' },
-            'Investment': { icon: 'line-chart', color: '#10B981', bg: '#D1FAE5' },
-            'Refund': { icon: 'undo', color: '#8B5CF6', bg: '#EDE9FE' },
-            'Other': { icon: 'ellipsis-h', color: '#6B7280', bg: '#F3F4F6' },
+            'Transfer': { icon: 'exchange', color: '#0077FF', bg: '#E0F2FE' },
         };
 
-        return styles[category] || { icon: 'question', color: '#6B7280', bg: '#F3F4F6' };
+        return defaults[categoryName] || { icon: 'question', color: '#6B7280', bg: '#F3F4F6' };
     };
+
+    // Filter Logic
+    const processTransactions = useCallback(() => {
+        let data = [...rawTransactions];
+
+        // 1. Filter by Month
+        if (selectedMonth) {
+            data = data.filter(item => {
+                const date = parseISO(item.created_at);
+                const monthName = format(date, 'MMM yyyy');
+                return monthName === selectedMonth;
+            });
+        }
+
+        // 2. Filter by Type (Income/Expense/Transfer)
+        if (filterBy) {
+            const typeMap = { 'Income': 'income', 'Expense': 'expense', 'Transfer': 'transfer' };
+            if (typeMap[filterBy]) {
+                data = data.filter(item => item.type === typeMap[filterBy]);
+            }
+        }
+
+        // 3. Filter by Category
+        if (selectedCategories.length > 0) {
+            data = data.filter(item => selectedCategories.includes(item.category));
+        }
+
+        // 4. Sort
+        if (sortBy) {
+            switch (sortBy) {
+                case 'Highest':
+                    data.sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount));
+                    break;
+                case 'Lowest':
+                    data.sort((a, b) => Math.abs(a.amount) - Math.abs(b.amount));
+                    break;
+                case 'Newest':
+                    data.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+                    break;
+                case 'Oldest':
+                    data.sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+                    break;
+                default:
+                    data.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+            }
+        } else {
+            // Default sort
+            data.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+        }
+
+        // 5. Group by Date
+        const grouped = data.reduce((acc, curr) => {
+            const date = parseISO(curr.created_at);
+            let title = format(date, 'dd MMM yyyy');
+
+            if (isToday(date)) title = 'Today';
+            if (isYesterday(date)) title = 'Yesterday';
+
+            const existingSection = acc.find(s => s.title === title);
+
+            let item;
+            if (curr.type === 'transfer') {
+                item = {
+                    id: curr.id,
+                    title: 'Transfer',
+                    description: curr.description || 'Wallet Transfer',
+                    amount: Math.abs(curr.amount),
+                    time: format(date, 'dd MMM, hh:mm a'),
+                    icon: 'exchange',
+                    backgroundColor: '#E0F2FE', // Light Blue
+                    iconColor: '#0077FF',
+                    type: 'transfer',
+                    originalDate: curr.created_at
+                };
+            } else {
+                const categoryStyle = getCategoryStyles(curr.category, curr.type);
+                item = {
+                    id: curr.id,
+                    title: curr.category,
+                    description: curr.description || curr.wallet,
+                    amount: curr.type === 'expense' ? -Math.abs(curr.amount) : Math.abs(curr.amount),
+                    time: format(date, 'dd MMM, hh:mm a'),
+                    icon: categoryStyle.icon,
+                    backgroundColor: categoryStyle.bg,
+                    iconColor: categoryStyle.color,
+                    type: curr.type,
+                    originalDate: curr.created_at
+                };
+            }
+
+            if (existingSection) {
+                existingSection.data.push(item);
+            } else {
+                acc.push({ title, data: [item] });
+            }
+            return acc;
+        }, []);
+
+        setTransactionSections(grouped);
+    }, [rawTransactions, selectedMonth, filterBy, sortBy, selectedCategories, categories]); // Added categories dependency
+
+    // Apply filters whenever state changes
+    useEffect(() => {
+        processTransactions();
+    }, [processTransactions]);
 
     const fetchTransactions = async () => {
         try {
@@ -71,63 +190,53 @@ export default function TransactionScreen() {
             const { data: expenses, error: expenseError } = await supabase
                 .from('expenses')
                 .select('*')
-                .eq('user_id', user.id)
-                .order('created_at', { ascending: false });
+                .eq('user_id', user.id);
 
             const { data: income, error: incomeError } = await supabase
                 .from('income')
                 .select('*')
-                .eq('user_id', user.id)
-                .order('created_at', { ascending: false });
+                .eq('user_id', user.id);
 
-            if (expenseError || incomeError) {
-                console.error('Error fetching data:', expenseError || incomeError);
+            const { data: transfers, error: transferError } = await supabase
+                .from('transfers')
+                .select('*')
+                .eq('user_id', user.id);
+
+            // Fetch categories too
+            const { data: fetchedCategories, error: categoryError } = await supabase
+                .from('categories')
+                .select('*')
+                .or(`user_id.eq.${user.id},user_id.is.null`);
+
+            if (expenseError || incomeError || transferError || categoryError) {
+                console.error('Error fetching data:', expenseError || incomeError || transferError || categoryError);
                 return;
+            }
+
+            if (fetchedCategories) {
+                setCategories(fetchedCategories);
             }
 
             const allTransactions = [
                 ...expenses.map(e => ({ ...e, type: 'expense' })),
-                ...income.map(i => ({ ...i, type: 'income' }))
+                ...income.map(i => ({ ...i, type: 'income' })),
+                ...(transfers || []).map(t => ({ ...t, type: 'transfer', category: 'Transfer' }))
             ].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
 
-            const grouped = allTransactions.reduce((acc, curr) => {
-                const date = parseISO(curr.created_at);
-                let title = format(date, 'dd MMM yyyy');
+            setRawTransactions(allTransactions);
 
-                if (isToday(date)) title = 'Today';
-                if (isYesterday(date)) title = 'Yesterday';
-
-                const existingSection = acc.find(s => s.title === title);
-                const categoryStyle = getCategoryStyles(curr.category, curr.type);
-
-                const item = {
-                    id: curr.id,
-                    title: curr.category,
-                    description: curr.description || curr.wallet,
-                    amount: curr.type === 'expense' ? -Math.abs(curr.amount) : Math.abs(curr.amount),
-                    time: format(date, 'hh:mm a'),
-                    icon: categoryStyle.icon,
-                    backgroundColor: categoryStyle.bg,
-                    iconColor: categoryStyle.color,
-                    type: curr.type,
-                    originalDate: curr.created_at
-                };
-
-                if (existingSection) {
-                    existingSection.data.push(item);
-                } else {
-                    acc.push({ title, data: [item] });
-                }
-                return acc;
-            }, []);
-
-            setTransactionSections(grouped);
         } catch (error) {
             console.error('Error in fetchTransactions:', error);
         } finally {
             setLoading(false);
         }
     };
+
+    useFocusEffect(
+        useCallback(() => {
+            fetchTransactions();
+        }, [])
+    );
 
     const handleMonthSelect = (month) => {
         setSelectedMonth(month);
@@ -154,14 +263,10 @@ export default function TransactionScreen() {
         setFilterBy(null);
         setSortBy(null);
         setSelectedCategories([]);
+        setSelectedMonth(months[0]);
     };
 
     const handleApplyFilters = () => {
-        console.log({
-            filterBy,
-            sortBy,
-            selectedCategories,
-        });
         setShowFilterModal(false);
     };
 
@@ -242,8 +347,8 @@ export default function TransactionScreen() {
                 />
             </View>
             <View style={styles.transactionDetails}>
-                <Text style={styles.transactionTitle}>{item.title}</Text>
-                <Text style={styles.transactionDescription}>
+                <Text style={[styles.transactionTitle, { color: colors.textPrimary }]}>{item.title}</Text>
+                <Text style={[styles.transactionDescription, { color: colors.textSecondary }]}>
                     {item.description}
                 </Text>
             </View>
@@ -251,24 +356,25 @@ export default function TransactionScreen() {
                 <Text
                     style={[
                         styles.transactionAmount,
-                        { color: item.type === 'expense' ? '#FF5555' : '#00D09E' },
+                        { color: item.type === 'expense' ? '#FF5555' : item.type === 'income' ? '#00D09E' : '#0077FF' },
                     ]}
                 >
-                    {item.type === 'expense' ? '-' : '+'}${Math.abs(item.amount)}
+                    {item.type === 'expense' ? '-' : item.type === 'income' ? '+' : ''}{currencySymbol}{Math.abs(item.amount)}
                 </Text>
-                <Text style={styles.transactionTime}>{item.time}</Text>
+                <Text style={[styles.transactionTime, { color: colors.textSecondary }]}>{item.time}</Text>
             </View>
         </TouchableOpacity>
     );
 
     const renderSectionHeader = ({ section: { title } }) => (
-        <Text style={styles.sectionHeader}>{title}</Text>
+        <Text style={[styles.sectionHeader, { color: colors.textPrimary, backgroundColor: colors.background }]}>{title}</Text>
     );
 
     const renderMonthItem = ({ item }) => (
         <TouchableOpacity
             style={[
                 styles.monthItem,
+                { backgroundColor: selectedMonth === item ? colors.primaryLight : colors.cardBackground },
                 selectedMonth === item && styles.monthItemSelected,
             ]}
             onPress={() => handleMonthSelect(item)}
@@ -276,6 +382,7 @@ export default function TransactionScreen() {
             <Text
                 style={[
                     styles.monthItemText,
+                    { color: selectedMonth === item ? colors.primary : colors.textPrimary },
                     selectedMonth === item && styles.monthItemTextSelected,
                 ]}
             >
@@ -285,33 +392,33 @@ export default function TransactionScreen() {
     );
 
     return (
-        <View style={styles.container}>
+        <View style={[styles.container, { backgroundColor: colors.background }]}>
             {/* Header */}
-            <View style={styles.headerContainer}>
-                <Text style={styles.headerTitle}>Transaction</Text>
+            <View style={[styles.headerContainer, { backgroundColor: colors.background }]}>
+                <Text style={[styles.headerTitle, { color: colors.textPrimary }]}>Transaction</Text>
 
                 {/* Month Filter and Filter Button */}
                 <View style={styles.headerControls}>
                     <TouchableOpacity
-                        style={styles.monthButton}
+                        style={[styles.monthButton, { backgroundColor: colors.cardBackground, borderColor: colors.border }]}
                         onPress={() => setShowMonthModal(true)}
                     >
-                        <Text style={styles.monthButtonText}>{selectedMonth}</Text>
-                        <FontAwesome name="chevron-down" size={14} color="#7C3FED" />
+                        <Text style={[styles.monthButtonText, { color: colors.primary }]}>{selectedMonth}</Text>
+                        <FontAwesome name="chevron-down" size={14} color={colors.primary} />
                     </TouchableOpacity>
 
                     <TouchableOpacity
-                        style={styles.filterButton}
+                        style={[styles.filterButton, { backgroundColor: colors.cardBackground }]}
                         onPress={() => setShowFilterModal(true)}
                     >
-                        <FontAwesome name="sliders" size={20} color="#000000" />
+                        <FontAwesome name="sliders" size={20} color={colors.textPrimary} />
                     </TouchableOpacity>
                 </View>
 
                 {/* Financial Report Banner */}
-                <TouchableOpacity style={styles.reportBanner}>
-                    <Text style={styles.reportText}>See your financial report</Text>
-                    <FontAwesome name="chevron-right" size={18} color="#7C3FED" />
+                <TouchableOpacity style={[styles.reportBanner, { backgroundColor: colors.primaryLight }]} onPress={() => router.push('/(tab)/ExportScreen')}>
+                    <Text style={[styles.reportText, { color: colors.primary }]}>See your financial report</Text>
+                    <FontAwesome name="chevron-right" size={18} color={colors.primary} />
                 </TouchableOpacity>
             </View>
 
@@ -322,9 +429,14 @@ export default function TransactionScreen() {
                 renderItem={renderTransactionItem}
                 renderSectionHeader={renderSectionHeader}
                 scrollEnabled={true}
-                contentContainerStyle={styles.listContent}
+                contentContainerStyle={[styles.listContent, { paddingBottom: 110 }]}
                 refreshing={loading}
                 onRefresh={fetchTransactions}
+                ListEmptyComponent={() => (
+                    <View style={styles.emptyContainer}>
+                        <Text style={[styles.emptyText, { color: colors.textSecondary }]}>Please add transaction</Text>
+                    </View>
+                )}
             />
 
             {/* Month Selection Modal */}
@@ -340,11 +452,11 @@ export default function TransactionScreen() {
                         onPress={() => setShowMonthModal(false)}
                     />
 
-                    <View style={styles.modalContent}>
+                    <View style={[styles.modalContent, { backgroundColor: colors.cardBackground }]}>
                         <View style={styles.modalHeader}>
-                            <Text style={styles.modalTitle}>Select Month</Text>
+                            <Text style={[styles.modalTitle, { color: colors.textPrimary }]}>Select Month</Text>
                             <TouchableOpacity onPress={() => setShowMonthModal(false)}>
-                                <FontAwesome name="times" size={24} color="#000000" />
+                                <FontAwesome name="times" size={24} color={colors.textPrimary} />
                             </TouchableOpacity>
                         </View>
 
@@ -373,15 +485,15 @@ export default function TransactionScreen() {
                         onPress={() => setShowFilterModal(false)}
                     />
 
-                    <View style={styles.filterModalContent}>
+                    <View style={[styles.filterModalContent, { backgroundColor: colors.cardBackground }]}>
                         {/* Handle Bar */}
-                        <View style={styles.handleBar} />
+                        <View style={[styles.handleBar, { backgroundColor: colors.border }]} />
 
                         {/* Filter Header */}
                         <View style={styles.filterHeader}>
-                            <Text style={styles.filterTitle}>Filter Transaction</Text>
+                            <Text style={[styles.filterTitle, { color: colors.textPrimary }]}>Filter Transaction</Text>
                             <TouchableOpacity onPress={handleReset}>
-                                <Text style={styles.resetButton}>Reset</Text>
+                                <Text style={[styles.resetButton, { color: colors.primary }]}>Reset</Text>
                             </TouchableOpacity>
                         </View>
 
@@ -391,7 +503,7 @@ export default function TransactionScreen() {
                         >
                             {/* Filter By Section */}
                             <View style={styles.filterSection}>
-                                <Text style={styles.filterSectionTitle}>Filter By</Text>
+                                <Text style={[styles.filterSectionTitle, { color: colors.textPrimary }]}>Filter By</Text>
                                 <View style={styles.filterButtonsContainer}>
                                     {filterOptions.map((option) => (
                                         <TouchableOpacity
@@ -417,7 +529,7 @@ export default function TransactionScreen() {
 
                             {/* Sort By Section */}
                             <View style={styles.filterSection}>
-                                <Text style={styles.filterSectionTitle}>Sort By</Text>
+                                <Text style={[styles.filterSectionTitle, { color: colors.textPrimary }]}>Sort By</Text>
                                 <View style={styles.sortButtonsContainer}>
                                     {sortOptions.map((option) => (
                                         <TouchableOpacity
@@ -443,21 +555,34 @@ export default function TransactionScreen() {
 
                             {/* Category Section */}
                             <View style={styles.filterSection}>
-                                <Text style={styles.filterSectionTitle}>Category</Text>
-                                <TouchableOpacity style={styles.categorySelector}>
-                                    <Text style={styles.categorySelectorText}>Choose Category</Text>
-                                    <Text style={styles.selectedCountText}>
-                                        {selectedCategories.length} Selected
-                                    </Text>
-                                    <FontAwesome name="chevron-right" size={16} color="#7C3FED" />
-                                </TouchableOpacity>
+                                <Text style={[styles.filterSectionTitle, { color: colors.textPrimary }]}>Category</Text>
+                                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
+                                    {categories.map((cat) => (
+                                        <TouchableOpacity
+                                            key={cat.id}
+                                            style={[
+                                                styles.filterOptionButton,
+                                                { minWidth: '40%' },
+                                                selectedCategories.includes(cat.name) && styles.filterOptionButtonActive
+                                            ]}
+                                            onPress={() => handleCategoryToggle(cat.name)}
+                                        >
+                                            <Text style={[
+                                                styles.filterOptionText,
+                                                selectedCategories.includes(cat.name) && styles.filterOptionTextActive
+                                            ]}>
+                                                {cat.name.length > 15 ? cat.name.substring(0, 10) + '...' : cat.name}
+                                            </Text>
+                                        </TouchableOpacity>
+                                    ))}
+                                </View>
                             </View>
                         </ScrollView>
 
                         {/* Apply Button */}
                         <View style={styles.filterButtonContainer}>
                             <TouchableOpacity
-                                style={styles.applyButton}
+                                style={[styles.applyButton, { backgroundColor: colors.primary }]}
                                 onPress={handleApplyFilters}
                             >
                                 <Text style={styles.applyButtonText}>Apply</Text>
@@ -481,6 +606,7 @@ const styles = StyleSheet.create({
     container: {
         flex: 1,
         backgroundColor: '#FFFFFF',
+
     },
     headerContainer: {
         paddingHorizontal: 20,
@@ -624,7 +750,7 @@ const styles = StyleSheet.create({
     monthGridContent: {
         paddingHorizontal: 20,
         paddingTop: 20,
-        gap: 12,
+        gap: 12
     },
     monthItem: {
         flex: 1,
@@ -792,5 +918,15 @@ const styles = StyleSheet.create({
         fontSize: 18,
         fontWeight: '600',
         color: '#FFFFFF',
+    },
+    emptyContainer: {
+        flex: 1,
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingTop: 50,
+    },
+    emptyText: {
+        fontSize: 16,
+        fontStyle: 'italic',
     },
 });

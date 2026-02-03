@@ -8,6 +8,7 @@ import {
     Image,
     Dimensions,
     Alert,
+    ActivityIndicator,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import FontAwesome from '@expo/vector-icons/FontAwesome';
@@ -16,7 +17,9 @@ import Colors from '../../constant/Colors';
 import { router, useFocusEffect } from 'expo-router';
 import { supabase } from '../../lib/supabase';
 import { useCallback } from 'react';
-import { format } from 'date-fns';
+import { useSelector } from 'react-redux';
+import { getColors } from '../../utils/themeSlice';
+import { format, startOfDay, endOfDay, startOfWeek, endOfWeek, startOfMonth, endOfMonth, startOfYear, endOfYear, isWithinInterval } from 'date-fns';
 import TransactionActionModal from '../../components/TransactionActionModal';
 
 const { width } = Dimensions.get('window');
@@ -27,40 +30,20 @@ export default function HomeScreen() {
     const [totalIncome, setTotalIncome] = useState(0);
     const [totalExpenses, setTotalExpenses] = useState(0);
     const [recentTransactions, setRecentTransactions] = useState([]);
+    const [rawTransactions, setRawTransactions] = useState([]);
+    const currencySymbol = useSelector((state) => state.currency.symbol);
+    const themeMode = useSelector((state) => state.theme.mode);
+    const colors = getColors(themeMode);
+    const [loading, setLoading] = useState(true);
 
     // Modal State
     const [modalVisible, setModalVisible] = useState(false);
     const [selectedTransaction, setSelectedTransaction] = useState(null);
 
-    useFocusEffect(
-        useCallback(() => {
-            fetchData();
-        }, [])
-    );
-
-    const getCategoryStyles = (category, type) => {
-        const styles = {
-            'Food': { icon: 'cutlery', color: '#FF5555', bg: '#FFE6E6' },
-            'Shopping': { icon: 'shopping-bag', color: '#FFA500', bg: '#FFF4E6' },
-            'Transport': { icon: 'car', color: '#3B82F6', bg: '#E6F2FF' },
-            'Entertainment': { icon: 'film', color: '#7C3FED', bg: '#F0E6FF' },
-            'Bills': { icon: 'file-text', color: '#EF4444', bg: '#FEE2E2' },
-            'Salary': { icon: 'dollar', color: '#00D09E', bg: '#E6F9F5' },
-            'Bonus': { icon: 'gift', color: '#F59E0B', bg: '#FEF3C7' },
-            'Freelance': { icon: 'laptop', color: '#6366F1', bg: '#E0E7FF' },
-            'Investment': { icon: 'line-chart', color: '#10B981', bg: '#D1FAE5' },
-            'Refund': { icon: 'undo', color: '#8B5CF6', bg: '#EDE9FE' },
-            'Other': { icon: 'ellipsis-h', color: '#6B7280', bg: '#F3F4F6' },
-            'Passive Income': { icon: 'line-chart', color: '#10B981', bg: '#D1FAE5' },
-            'Business': { icon: 'briefcase', color: '#6366F1', bg: '#E0E7FF' },
-            'Gift': { icon: 'gift', color: '#F59E0B', bg: '#FEF3C7' },
-        };
-
-        return styles[category] || { icon: 'question', color: '#6B7280', bg: '#F3F4F6' };
-    };
-
-    const fetchData = async () => {
+    // Fetch Data (Memoized)
+    const fetchData = useCallback(async () => {
         try {
+            setLoading(true);
             const { data: { user } } = await supabase.auth.getUser();
             if (!user) return;
 
@@ -74,46 +57,162 @@ export default function HomeScreen() {
                 .select('*')
                 .eq('user_id', user.id);
 
-            if (expenseError || incomeError) {
-                console.error('Error fetching data:', expenseError || incomeError);
+            const { data: wallets, error: walletError } = await supabase
+                .from('wallets')
+                .select('amount')
+                .eq('user_id', user.id);
+
+            const { data: transfers, error: transferError } = await supabase
+                .from('transfers')
+                .select('*')
+                .eq('user_id', user.id);
+
+            const { data: fetchedCategories, error: categoryError } = await supabase
+                .from('categories')
+                .select('*')
+                .or(`user_id.eq.${user.id},user_id.is.null`);
+
+            if (expenseError || incomeError || walletError || transferError || categoryError) {
+                console.error('Error fetching data:', expenseError || incomeError || walletError || transferError || categoryError);
                 return;
             }
 
-            // Calculate totals
-            const expTotal = expenses.reduce((sum, item) => sum + Number(item.amount), 0);
-            const incTotal = income.reduce((sum, item) => sum + Number(item.amount), 0);
+            if (fetchedCategories) {
+                setCategories(fetchedCategories);
+            }
 
-            setTotalExpenses(expTotal);
-            setTotalIncome(incTotal);
-            setBalance(incTotal - expTotal);
+            // Calculate Global Balance (From Wallets)
+            const totalWalletBalance = (wallets || []).reduce((sum, item) => sum + Number(item.amount), 0);
+            setBalance(totalWalletBalance);
 
-            // Get recent transactions
-            const allTransactions = [
+            // Combine and sort all transactions
+            const combined = [
                 ...expenses.map(e => ({ ...e, type: 'expense' })),
-                ...income.map(i => ({ ...i, type: 'income' }))
-            ].sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
-                .slice(0, 5); // Take top 5
+                ...income.map(i => ({ ...i, type: 'income' })),
+                ...(transfers || []).map(t => ({ ...t, type: 'transfer', category: 'Transfer' }))
+            ].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
 
-            const formattedRecent = allTransactions.map(curr => {
-                const categoryStyle = getCategoryStyles(curr.category, curr.type);
-                return {
-                    ...curr, // Keep original data for editing
-                    title: curr.category,
-                    description: curr.description || curr.wallet,
-                    displayAmount: curr.type === 'expense' ? -Math.abs(curr.amount) : Math.abs(curr.amount),
-                    time: format(new Date(curr.created_at), 'hh:mm a'),
-                    icon: categoryStyle.icon,
-                    backgroundColor: categoryStyle.bg,
-                    iconColor: categoryStyle.color,
-                    type: curr.type
-                };
-            });
-
-            setRecentTransactions(formattedRecent);
+            setRawTransactions(combined);
 
         } catch (error) {
             console.error('Error in fetchData:', error);
+        } finally {
+            setLoading(false);
         }
+    }, []);
+
+    // Fetch data when screen comes into focus
+    useFocusEffect(
+        useCallback(() => {
+            fetchData();
+        }, [fetchData])
+    );
+
+    // Re-calculate financials when period or raw data changes
+    useEffect(() => {
+        calculateFinancials();
+    }, [selectedPeriod, rawTransactions, categories]);
+
+    const getCategoryStyles = (categoryName, type) => {
+        const foundCategory = categories.find(c => c.name === categoryName && (!type || c.type === type || !c.type));
+
+        if (foundCategory) {
+            return {
+                icon: foundCategory.icon,
+                color: foundCategory.color,
+                bg: foundCategory.color + '20' // Add 20 for 12% opacity (hex transparency)
+            };
+        }
+
+        // Fallback for hardcoded defaults if DB is empty or miss
+        const defaults = {
+            'Transfer': { icon: 'exchange', color: '#0077FF', bg: '#E0F2FE' },
+            'Food': { icon: 'cutlery', color: '#FF5555', bg: '#FFE6E6' },
+            'Shopping': { icon: 'shopping-bag', color: '#FFA500', bg: '#FFF4E6' },
+        };
+        return defaults[categoryName] || { icon: 'question', color: '#6B7280', bg: '#F3F4F6' };
+    };
+
+    const [categories, setCategories] = useState([]);
+
+
+
+    const calculateFinancials = () => {
+        const now = new Date();
+        let start, end;
+
+        switch (selectedPeriod) {
+            case 'Today':
+                start = startOfDay(now);
+                end = endOfDay(now);
+                break;
+            case 'Week':
+                start = startOfWeek(now, { weekStartsOn: 1 });
+                end = endOfWeek(now, { weekStartsOn: 1 });
+                break;
+            case 'Month':
+                start = startOfMonth(now);
+                end = endOfMonth(now);
+                break;
+            case 'Year':
+                start = startOfYear(now);
+                end = endOfYear(now);
+                break;
+            default: // 'All' or fallback
+                start = new Date(0); // Epoch
+                end = new Date(8640000000000000); // Max date
+                break;
+        }
+
+        const filtered = rawTransactions.filter(item => {
+            const date = new Date(item.created_at);
+            return isWithinInterval(date, { start, end });
+        });
+
+        // Calculate Period Income/Expenses (Exclude transfers from these totals)
+        const periodIncome = filtered
+            .filter(t => t.type === 'income')
+            .reduce((sum, t) => sum + Number(t.amount), 0);
+
+        const periodExpenses = filtered
+            .filter(t => t.type === 'expense')
+            .reduce((sum, t) => sum + Number(t.amount), 0);
+
+        setTotalIncome(periodIncome);
+        setTotalExpenses(periodExpenses);
+
+        // Recent Transactions
+        const recent = filtered.slice(0, 5).map(curr => {
+            // Handle Transfer Styles
+            if (curr.type === 'transfer') {
+                return {
+                    ...curr,
+                    title: 'Transfer',
+                    description: curr.description || 'Wallet Transfer',
+                    displayAmount: curr.amount,
+                    time: format(new Date(curr.created_at), 'dd MMM, hh:mm a'),
+                    icon: 'exchange',
+                    backgroundColor: '#E0F2FE', // Light Blue
+                    iconColor: '#0077FF', // Blue
+                    type: 'transfer'
+                };
+            }
+
+            const categoryStyle = getCategoryStyles(curr.category, curr.type);
+            return {
+                ...curr,
+                title: curr.category,
+                description: curr.description || curr.wallet,
+                displayAmount: curr.type === 'expense' ? -Math.abs(curr.amount) : Math.abs(curr.amount),
+                time: format(new Date(curr.created_at), 'dd MMM, hh:mm a'),
+                icon: categoryStyle.icon,
+                backgroundColor: categoryStyle.bg,
+                iconColor: categoryStyle.color,
+                type: curr.type
+            };
+        });
+
+        setRecentTransactions(recent);
     };
 
     const handleTransactionPress = (transaction) => {
@@ -125,19 +224,35 @@ export default function HomeScreen() {
         setModalVisible(false);
         if (!selectedTransaction) return;
 
-        const screen = selectedTransaction.type === 'expense' ? '/(Common)/ExpenseScreen' : '/(Common)/IncomeScreen';
+        let screen;
+        const params = {
+            id: selectedTransaction.id,
+            mode: 'edit',
+            amount: selectedTransaction.amount.toString(),
+            category: selectedTransaction.category,
+            description: selectedTransaction.description || '',
+            date: selectedTransaction.created_at, // Pass date
+        };
+
+        if (selectedTransaction.type === 'expense') {
+            screen = '/(Common)/ExpenseScreen';
+            params.wallet_id = selectedTransaction.wallet_id;
+            params.wallet = selectedTransaction.wallet;
+            params.is_repeat = selectedTransaction.is_repeat?.toString();
+        } else if (selectedTransaction.type === 'income') {
+            screen = '/(Common)/IncomeScreen';
+            params.wallet_id = selectedTransaction.wallet_id;
+            params.wallet = selectedTransaction.wallet;
+            params.is_repeat = selectedTransaction.is_repeat?.toString(); // Assuming income might have repeat later
+        } else if (selectedTransaction.type === 'transfer') {
+            screen = '/(Common)/TransferScreen';
+            params.from_wallet_id = selectedTransaction.from_wallet_id;
+            params.to_wallet_id = selectedTransaction.to_wallet_id;
+        }
 
         router.push({
             pathname: screen,
-            params: {
-                id: selectedTransaction.id,
-                mode: 'edit',
-                amount: selectedTransaction.amount.toString(),
-                category: selectedTransaction.category,
-                description: selectedTransaction.description || '',
-                wallet: selectedTransaction.wallet,
-                is_repeat: selectedTransaction.is_repeat?.toString(),
-            }
+            params: params
         });
     };
 
@@ -179,7 +294,7 @@ export default function HomeScreen() {
         return (
             <TouchableOpacity
                 key={transaction.id}
-                style={styles.transactionItem}
+                style={[styles.transactionItem, { borderBottomColor: colors.border }]}
                 onPress={() => handleTransactionPress(transaction)}
             >
                 <View
@@ -195,8 +310,8 @@ export default function HomeScreen() {
                     />
                 </View>
                 <View style={styles.transactionDetails}>
-                    <Text style={styles.transactionTitle}>{transaction.title}</Text>
-                    <Text style={styles.transactionDescription}>
+                    <Text style={[styles.transactionTitle, { color: colors.textPrimary }]}>{transaction.title}</Text>
+                    <Text style={[styles.transactionDescription, { color: colors.textSecondary }]}>
                         {transaction.description}
                     </Text>
                 </View>
@@ -204,39 +319,42 @@ export default function HomeScreen() {
                     <Text
                         style={[
                             styles.transactionAmount,
-                            { color: transaction.type === 'expense' ? '#FF5555' : '#00D09E' }
+                            { color: transaction.type === 'expense' ? '#FF5555' : transaction.type === 'income' ? '#00D09E' : '#0077FF' }
                         ]}
                     >
-                        {transaction.displayAmount > 0 ? '+' : ''}${Math.abs(transaction.displayAmount)}
+                        {transaction.type === 'income' && transaction.displayAmount > 0 ? '+' : ''}
+                        {currencySymbol}{Math.abs(transaction.displayAmount)}
                     </Text>
-                    <Text style={styles.transactionTime}>{transaction.time}</Text>
+                    <Text style={[styles.transactionTime, { color: colors.textSecondary }]}>{transaction.time}</Text>
                 </View>
             </TouchableOpacity>
         );
     }
 
+    if (loading) {
+        return (
+            <View style={[styles.loadingContainer, { backgroundColor: colors.background }]}>
+                <ActivityIndicator size="large" color={colors.primary} />
+            </View>
+        );
+    }
+
     return (
-        <View style={styles.container}>
+        <View style={[styles.container, { backgroundColor: colors.background }]}>
             <ScrollView
                 showsVerticalScrollIndicator={false}
                 contentContainerStyle={styles.scrollContent}
             >
                 {/* Header with gradient background */}
                 <LinearGradient
-                    colors={['#FFF8E1', '#FFFFFF']}
+                    colors={themeMode === 'dark' ? ['#1C1C1E', '#0D0E0F'] : ['#FFF8E1', '#FFFFFF']}
                     style={styles.header}
                 >
-                    {/* Profile Image */}
-                    <View style={styles.profileContainer}>
-                        <Image
-                            source={{ uri: 'https://via.placeholder.com/80' }}
-                            style={styles.profileImage}
-                        />
-                    </View>
+
 
                     {/* Account Balance */}
-                    <Text style={styles.balanceLabel}>Account Balance</Text>
-                    <Text style={styles.balanceAmount}>${balance.toFixed(2)}</Text>
+                    <Text style={[styles.balanceLabel, { color: colors.textSecondary }]}>Account Balance</Text>
+                    <Text style={[styles.balanceAmount, { color: colors.textPrimary }]}>{currencySymbol}{balance.toFixed(2)}</Text>
 
                     {/* Income and Expense Cards */}
                     <View style={styles.cardsContainer}>
@@ -247,7 +365,7 @@ export default function HomeScreen() {
                             </View>
                             <View style={styles.cardContent}>
                                 <Text style={styles.cardLabel}>Income</Text>
-                                <Text style={styles.cardAmount}>${totalIncome.toFixed(2)}</Text>
+                                <Text style={styles.cardAmount}>{currencySymbol}{totalIncome.toFixed(2)}</Text>
                             </View>
                         </View>
 
@@ -258,7 +376,7 @@ export default function HomeScreen() {
                             </View>
                             <View style={styles.cardContent}>
                                 <Text style={styles.cardLabel}>Expenses</Text>
-                                <Text style={styles.cardAmount}>${totalExpenses.toFixed(2)}</Text>
+                                <Text style={styles.cardAmount}>{currencySymbol}{totalExpenses.toFixed(2)}</Text>
                             </View>
                         </View>
                     </View>
@@ -274,13 +392,14 @@ export default function HomeScreen() {
                                 key={period}
                                 style={[
                                     styles.periodButton,
-                                    selectedPeriod === period && styles.periodButtonActive,
+                                    selectedPeriod === period && { backgroundColor: themeMode === 'dark' ? '#2D2440' : '#FFF4E6' },
                                 ]}
                                 onPress={() => setSelectedPeriod(period)}
                             >
                                 <Text
                                     style={[
                                         styles.periodText,
+                                        { color: selectedPeriod === period ? '#FFA500' : colors.textSecondary },
                                         selectedPeriod === period && styles.periodTextActive,
                                     ]}
                                 >
@@ -294,17 +413,23 @@ export default function HomeScreen() {
                 {/* Recent Transaction Section */}
                 <View style={styles.section}>
                     <View style={styles.sectionHeader}>
-                        <Text style={styles.sectionTitle}>Recent Transaction</Text>
+                        <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>Recent Transaction</Text>
                         <TouchableOpacity
-                            style={styles.seeAllButton}
+                            style={[styles.seeAllButton, { backgroundColor: colors.primaryLight }]}
                             onPress={() => router.push("/(tab)/TransactionScreen")}
                         >
-                            <Text style={styles.seeAllText}>See All</Text>
+                            <Text style={[styles.seeAllText, { color: colors.primary }]}>See All</Text>
                         </TouchableOpacity>
                     </View>
 
                     {/* Transaction List */}
-                    {recentTransactions.map(renderTransactionItem)}
+                    {recentTransactions.length === 0 ? (
+                        <View style={styles.emptyContainer}>
+                            <Text style={[styles.emptyText, { color: colors.textSecondary }]}>Please add transaction</Text>
+                        </View>
+                    ) : (
+                        recentTransactions.map(renderTransactionItem)
+                    )}
                 </View>
 
                 {/* Extra padding for bottom tab bar */}
@@ -324,7 +449,6 @@ export default function HomeScreen() {
 const styles = StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: '#FFFFFF',
     },
     scrollContent: {
         paddingBottom: 20,
@@ -367,11 +491,10 @@ const styles = StyleSheet.create({
     },
     card: {
         flex: 1,
-        flexDirection: 'row',
-        alignItems: 'center',
         padding: 16,
-        borderRadius: 20,
-        gap: 12,
+        borderRadius: 24,
+        gap: 8,
+        justifyContent: 'space-between',
     },
     incomeCard: {
         backgroundColor: '#00D09E',
@@ -380,19 +503,21 @@ const styles = StyleSheet.create({
         backgroundColor: '#FF5555',
     },
     cardIcon: {
-        width: 48,
-        height: 48,
+        width: 44,
+        height: 44,
         borderRadius: 12,
-        backgroundColor: 'rgba(255, 255, 255, 0.3)',
+        backgroundColor: 'rgba(255, 255, 255, 0.2)',
         justifyContent: 'center',
         alignItems: 'center',
+        marginBottom: 4,
     },
     cardContent: {
-        flex: 1,
+        // Removed flex: 1
     },
     cardLabel: {
         fontSize: 14,
         color: '#FFFFFF',
+        opacity: 0.9,
         marginBottom: 4,
     },
     cardAmount: {
@@ -413,7 +538,6 @@ const styles = StyleSheet.create({
     sectionTitle: {
         fontSize: 18,
         fontWeight: 'bold',
-        color: '#000000',
     },
     seeAllButton: {
         backgroundColor: '#F0E6FF',
@@ -457,7 +581,6 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         paddingVertical: 16,
         borderBottomWidth: 1,
-        borderBottomColor: '#F5F5F5',
     },
     transactionIcon: {
         width: 60,
@@ -473,7 +596,6 @@ const styles = StyleSheet.create({
     transactionTitle: {
         fontSize: 16,
         fontWeight: '600',
-        color: '#000000',
         marginBottom: 4,
     },
     transactionDescription: {
@@ -492,5 +614,19 @@ const styles = StyleSheet.create({
     transactionTime: {
         fontSize: 13,
         color: '#999999',
+    },
+    loadingContainer: {
+        flex: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    emptyContainer: {
+        paddingVertical: 20,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    emptyText: {
+        fontSize: 14,
+        fontStyle: 'italic',
     },
 });

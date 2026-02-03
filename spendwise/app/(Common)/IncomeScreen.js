@@ -13,6 +13,10 @@ import { LinearGradient } from 'expo-linear-gradient';
 import FontAwesome from '@expo/vector-icons/FontAwesome';
 import { useRouter } from 'expo-router';
 import { supabase } from '../../lib/supabase';
+import { useSelector } from 'react-redux';
+import { getColors } from '../../utils/themeSlice';
+import { format } from 'date-fns';
+import DateTimePicker from '@react-native-community/datetimepicker';
 
 import { useLocalSearchParams } from 'expo-router';
 
@@ -21,28 +25,58 @@ export default function IncomeScreen() {
     const isEditMode = params.mode === 'edit';
 
     const [amount, setAmount] = useState(params.amount || '');
+    const [date, setDate] = useState(new Date());
+    const [showDatePicker, setShowDatePicker] = useState(false);
     const [selectedCategory, setSelectedCategory] = useState(null);
     const [description, setDescription] = useState(params.description || '');
     const [selectedWallet, setSelectedWallet] = useState(null);
-    const [isRepeatEnabled, setIsRepeatEnabled] = useState(params.is_repeat === 'true');
     const [showCategoryDropdown, setShowCategoryDropdown] = useState(false);
     const [showWalletDropdown, setShowWalletDropdown] = useState(false);
     const router = useRouter();
+    const currencySymbol = useSelector((state) => state.currency.symbol);
+    const themeMode = useSelector((state) => state.theme.mode);
+    const colors = getColors(themeMode);
 
-    const categories = [
-        { id: 1, name: 'Salary', icon: 'dollar' },
-        { id: 2, name: 'Passive Income', icon: 'line-chart' },
-        { id: 3, name: 'Business', icon: 'briefcase' },
-        { id: 4, name: 'Freelance', icon: 'laptop' },
-        { id: 5, name: 'Gift', icon: 'gift' },
-        { id: 6, name: 'Other', icon: 'ellipsis-h' },
-    ];
+    const [categories, setCategories] = useState([]);
 
-    const wallets = [
-        { id: 1, name: 'Cash' },
-        { id: 2, name: 'Bank Transfer' },
-        { id: 3, name: 'Cheque' },
-    ];
+    // Fetch categories from Supabase
+    useEffect(() => {
+        const fetchCategories = async () => {
+            try {
+                const { data, error } = await supabase
+                    .from('categories')
+                    .select('*')
+                    .or('type.eq.income,type.is.null'); // Fetch income categories or generic ones
+
+                if (error) throw error;
+
+                if (data && data.length > 0) {
+                    setCategories(data);
+                } else {
+                    const defaultCategories = [
+                        { id: 1, name: 'Salary', icon: 'dollar', color: '#00A86B' },
+                        { id: 2, name: 'Passive Income', icon: 'line-chart', color: '#00A86B' },
+                        { id: 3, name: 'Business', icon: 'briefcase', color: '#00A86B' },
+                    ];
+                    setCategories(defaultCategories);
+                }
+            } catch (err) {
+                console.error("Error fetching categories:", err);
+            }
+        };
+        fetchCategories();
+    }, []);
+
+    // We need to change 'wallets' from const to state
+    const [wallets, setWallets] = useState([]);
+
+    useEffect(() => { // Fetch wallets
+        const getWallets = async () => {
+            const { data } = await supabase.from('wallets').select('*');
+            if (data) setWallets(data);
+        };
+        getWallets();
+    }, []);
 
     // Initialize selected items if in edit mode
     useEffect(() => {
@@ -51,18 +85,20 @@ export default function IncomeScreen() {
                 const category = categories.find(c => c.name === params.category);
                 if (category) setSelectedCategory(category);
             }
-            if (params.wallet) {
-                const wallet = wallets.find(w => w.name === params.wallet);
+            if (params.wallet_id && wallets.length > 0) {
+                const wallet = wallets.find(w => w.id === params.wallet_id);
                 if (wallet) setSelectedWallet(wallet);
             }
         }
-    }, [isEditMode, params.category, params.wallet]);
+    }, [isEditMode, wallets, categories, params]);
 
     const handleContinue = async () => {
         if (!amount || !selectedCategory || !selectedWallet) {
             alert('Please fill all required fields');
             return;
         }
+
+        const incomeAmount = parseFloat(amount);
 
         try {
             const { data: { user } } = await supabase.auth.getUser();
@@ -74,21 +110,25 @@ export default function IncomeScreen() {
 
             const payload = {
                 user_id: user.id,
-                amount: parseFloat(amount),
+                amount: incomeAmount,
                 category: selectedCategory.name,
+                wallet_id: selectedWallet.id,
                 wallet: selectedWallet.name,
                 description: description,
-                is_repeat: isRepeatEnabled,
+                created_at: date.toISOString(),
             };
 
             let error;
             if (isEditMode) {
+                // DB Trigger handles wallet updates now
                 const { error: updateError } = await supabase
                     .from('income')
                     .update(payload)
                     .eq('id', params.id);
                 error = updateError;
+
             } else {
+                // DB Trigger handles wallet updates now
                 const { error: insertError } = await supabase
                     .from('income')
                     .insert([payload]);
@@ -104,7 +144,7 @@ export default function IncomeScreen() {
             }
         } catch (error) {
             console.error('Unexpected error:', error);
-            alert('An unexpected error occurred');
+            alert('An unexpected error occurred: ' + error.message);
         }
     };
 
@@ -134,7 +174,7 @@ export default function IncomeScreen() {
                     {/* Amount Input Field */}
                     <Text style={styles.amountLabel}>How much?</Text>
                     <View style={styles.amountInputContainer}>
-                        <Text style={styles.currencySymbol}>$</Text>
+                        <Text style={styles.currencySymbol}>{currencySymbol}</Text>
                         <TextInput
                             style={styles.amountInput}
                             placeholder="0"
@@ -177,7 +217,7 @@ export default function IncomeScreen() {
                                         setShowCategoryDropdown(false);
                                     }}
                                 >
-                                    <FontAwesome name={category.icon} size={16} color="#00D09E" />
+                                    <FontAwesome name={category.icon} size={16} color={category.color || "#00D09E"} />
                                     <Text style={styles.dropdownItemText}>{category.name}</Text>
                                 </TouchableOpacity>
                             ))}
@@ -196,8 +236,9 @@ export default function IncomeScreen() {
 
                     {/* Wallet Dropdown */}
                     <TouchableOpacity
-                        style={styles.inputField}
-                        onPress={() => setShowWalletDropdown(!showWalletDropdown)}
+                        style={[styles.inputField, isEditMode && { opacity: 0.7 }]}
+                        onPress={() => !isEditMode && setShowWalletDropdown(!showWalletDropdown)}
+                        disabled={isEditMode}
                     >
                         <Text
                             style={[
@@ -207,7 +248,7 @@ export default function IncomeScreen() {
                         >
                             {selectedWallet ? selectedWallet.name : 'Wallet'}
                         </Text>
-                        <FontAwesome name="chevron-down" size={16} color="#B0B0B0" />
+                        {!isEditMode && <FontAwesome name="chevron-down" size={16} color="#B0B0B0" />}
                     </TouchableOpacity>
 
                     {/* Wallet Dropdown Menu */}
@@ -222,34 +263,35 @@ export default function IncomeScreen() {
                                         setShowWalletDropdown(false);
                                     }}
                                 >
-                                    <FontAwesome name="wallet" size={16} color="#00D09E" />
+                                    <FontAwesome name="bank" size={16} color="#00D09E" />
                                     <Text style={styles.dropdownItemText}>{wallet.name}</Text>
                                 </TouchableOpacity>
                             ))}
                         </View>
                     )}
 
-                    {/* Repeat Toggle */}
-                    <View style={styles.repeatContainer}>
-                        <View>
-                            <Text style={styles.repeatLabel}>Repeat</Text>
-                            <Text style={styles.repeatSubtext}>Repeat transaction</Text>
-                        </View>
-                        <TouchableOpacity
-                            style={[
-                                styles.toggle,
-                                isRepeatEnabled && styles.toggleActive,
-                            ]}
-                            onPress={() => setIsRepeatEnabled(!isRepeatEnabled)}
-                        >
-                            <View
-                                style={[
-                                    styles.toggleCircle,
-                                    isRepeatEnabled && styles.toggleCircleActive,
-                                ]}
-                            />
-                        </TouchableOpacity>
-                    </View>
+                    {/* Date Picker */}
+                    <TouchableOpacity
+                        style={styles.inputField}
+                        onPress={() => setShowDatePicker(true)}
+                    >
+                        <Text style={[styles.inputLabel, { color: '#000', fontWeight: '500' }]}>
+                            {format(date, 'dd MMM yyyy')}
+                        </Text>
+                        <FontAwesome name="calendar" size={16} color="#B0B0B0" />
+                    </TouchableOpacity>
+
+                    {showDatePicker && (
+                        <DateTimePicker
+                            value={date}
+                            mode="date"
+                            display="default"
+                            onChange={(event, selectedDate) => {
+                                setShowDatePicker(false);
+                                if (selectedDate) setDate(selectedDate);
+                            }}
+                        />
+                    )}
 
                     {/* Continue Button */}
                     <TouchableOpacity

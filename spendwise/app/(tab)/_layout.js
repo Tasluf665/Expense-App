@@ -2,14 +2,26 @@ import { View, TouchableOpacity, StyleSheet, Platform, Text } from 'react-native
 import FontAwesome from '@expo/vector-icons/FontAwesome';
 import { Tabs, useRouter } from 'expo-router';
 import { useState } from 'react';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Colors from "../../constant/Colors";
+import { useSelector } from 'react-redux';
+import { getColors } from '../../utils/themeSlice';
 
 export default () => {
     const [isExpanded, setIsExpanded] = useState(false);
     const router = useRouter();
+    const insets = useSafeAreaInsets();
+
+    const themeMode = useSelector((state) => state.theme.mode);
+    const colors = getColors(themeMode);
 
     const handleAddPress = () => {
         setIsExpanded(!isExpanded);
+    };
+
+    const handleTransferPress = () => {
+        setIsExpanded(false);
+        router.push('/(Common)/TransferScreen');
     };
 
     const handleExpensePress = () => {
@@ -26,10 +38,16 @@ export default () => {
         <>
             <Tabs
                 screenOptions={{
-                    tabBarActiveTintColor: Colors.Primary || '#7C3FED',
-                    tabBarInactiveTintColor: Colors.DarkGray || '#B0B0B0',
+                    tabBarActiveTintColor: colors.primary,
+                    tabBarInactiveTintColor: colors.textSecondary,
                     tabBarShowLabel: true,
-                    tabBarStyle: styles.tabBar,
+                    tabBarStyle: {
+                        ...styles.tabBar,
+                        height: 70 + insets.bottom,
+                        paddingBottom: insets.bottom + 10,
+                        backgroundColor: colors.background,
+                        borderTopColor: colors.border,
+                    },
                     tabBarLabelStyle: styles.tabLabel,
                 }}
             >
@@ -63,7 +81,7 @@ export default () => {
                         tabBarIcon: ({ focused }) => (
                             <View style={styles.floatingButtonContainer}>
                                 <TouchableOpacity
-                                    style={styles.floatingButton}
+                                    style={[styles.floatingButton, { borderColor: colors.background, backgroundColor: colors.primary }]}
                                     activeOpacity={0.8}
                                     onPress={handleAddPress}
                                 >
@@ -104,27 +122,37 @@ export default () => {
                 />
             </Tabs>
 
-            {/* Floating Action Buttons - Expense and Income (Side by Side) */}
+            {/* Floating Action Buttons - Expense, Income, Transfer */}
             {isExpanded && (
                 <View style={styles.expandedButtonsContainer}>
-                    {/* Expense Button - Left */}
+                    {/* Transfer Button - Top */}
                     <TouchableOpacity
-                        style={[styles.expandedButton, styles.expenseButton]}
-                        onPress={handleExpensePress}
+                        style={[styles.expandedButton, styles.transferButton]}
+                        onPress={handleTransferPress}
                         activeOpacity={0.8}
                     >
-                        <FontAwesome name="arrow-up" size={24} color="#FFFFFF" />
-                        <Text style={styles.expandedButtonLabel}>Expense</Text>
+                        <FontAwesome name="exchange" size={20} color="#FFFFFF" style={{ marginRight: 8 }} />
+                        <Text style={styles.expandedButtonLabel}>Transfer</Text>
                     </TouchableOpacity>
 
-                    {/* Income Button - Right */}
+                    {/* Income Button - Middle */}
                     <TouchableOpacity
                         style={[styles.expandedButton, styles.incomeButton]}
                         onPress={handleIncomePress}
                         activeOpacity={0.8}
                     >
-                        <FontAwesome name="arrow-down" size={24} color="#FFFFFF" />
+                        <FontAwesome name="arrow-down" size={20} color="#FFFFFF" style={{ marginRight: 8 }} />
                         <Text style={styles.expandedButtonLabel}>Income</Text>
+                    </TouchableOpacity>
+
+                    {/* Expense Button - Bottom */}
+                    <TouchableOpacity
+                        style={[styles.expandedButton, styles.expenseButton]}
+                        onPress={handleExpensePress}
+                        activeOpacity={0.8}
+                    >
+                        <FontAwesome name="arrow-up" size={20} color="#FFFFFF" style={{ marginRight: 8 }} />
+                        <Text style={styles.expandedButtonLabel}>Expense</Text>
                     </TouchableOpacity>
                 </View>
             )}
@@ -192,19 +220,18 @@ const styles = StyleSheet.create({
     },
     expandedButtonsContainer: {
         position: 'absolute',
-        bottom: 85,
+        bottom: 100,
         left: 0,
         right: 0,
-        flexDirection: 'row',
-        justifyContent: 'space-around',
         alignItems: 'center',
-        paddingHorizontal: 40,
+        gap: 12,
         zIndex: 1000,
     },
     expandedButton: {
-        width: 70,
-        height: 70,
-        borderRadius: 35,
+        flexDirection: 'row',
+        width: 140,
+        height: 50,
+        borderRadius: 25,
         justifyContent: 'center',
         alignItems: 'center',
         shadowColor: '#000',
@@ -215,8 +242,9 @@ const styles = StyleSheet.create({
         shadowOpacity: 0.3,
         shadowRadius: 8,
         elevation: 8,
-        borderWidth: 4,
-        borderColor: '#FFFFFF',
+    },
+    transferButton: {
+        backgroundColor: '#0077FF',
     },
     expenseButton: {
         backgroundColor: '#FF5555',
@@ -226,9 +254,9 @@ const styles = StyleSheet.create({
     },
     expandedButtonLabel: {
         color: '#FFFFFF',
-        fontSize: 12,
+        fontSize: 16,
         fontWeight: '600',
-        marginTop: 4,
+        marginLeft: 4,
     },
     overlay: {
         position: 'absolute',

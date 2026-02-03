@@ -8,11 +8,16 @@ import {
     ScrollView,
     KeyboardAvoidingView,
     Platform,
+    Alert,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import FontAwesome from '@expo/vector-icons/FontAwesome';
 import { useRouter } from 'expo-router';
 import { supabase } from '../../lib/supabase';
+import { useSelector } from 'react-redux';
+import { getColors } from '../../utils/themeSlice';
+import { format } from 'date-fns';
+import DateTimePicker from '@react-native-community/datetimepicker';
 
 import { useLocalSearchParams } from 'expo-router';
 
@@ -21,28 +26,65 @@ export default function ExpenseScreen() {
     const isEditMode = params.mode === 'edit';
 
     const [amount, setAmount] = useState(params.amount || '');
+    const [date, setDate] = useState(new Date());
+    const [showDatePicker, setShowDatePicker] = useState(false);
     const [selectedCategory, setSelectedCategory] = useState(null);
     const [description, setDescription] = useState(params.description || '');
     const [selectedWallet, setSelectedWallet] = useState(null);
-    const [isRepeatEnabled, setIsRepeatEnabled] = useState(params.is_repeat === 'true');
     const [showCategoryDropdown, setShowCategoryDropdown] = useState(false);
     const [showWalletDropdown, setShowWalletDropdown] = useState(false);
     const router = useRouter();
+    const currencySymbol = useSelector((state) => state.currency.symbol);
+    const themeMode = useSelector((state) => state.theme.mode);
+    const colors = getColors(themeMode);
 
-    const categories = [
-        { id: 1, name: 'Food', icon: 'cutlery' },
-        { id: 2, name: 'Shopping', icon: 'shopping-bag' },
-        { id: 3, name: 'Transport', icon: 'car' },
-        { id: 4, name: 'Entertainment', icon: 'film' },
-        { id: 5, name: 'Bills', icon: 'file-text' },
-        { id: 6, name: 'Other', icon: 'ellipsis-h' },
-    ];
+    const [categories, setCategories] = useState([]);
 
-    const wallets = [
-        { id: 1, name: 'Cash' },
-        { id: 2, name: 'Debit Card' },
-        { id: 3, name: 'Credit Card' },
-    ];
+    // Fetch categories from Supabase
+    useEffect(() => {
+        const fetchCategories = async () => {
+            try {
+                const { data, error } = await supabase
+                    .from('categories')
+                    .select('*')
+                    .or('type.eq.expense,type.is.null'); // Fetch expense categories or generic ones
+
+                if (error) throw error;
+
+                if (data && data.length > 0) {
+                    setCategories(data);
+                } else {
+                    // Fallback or seed default if empty?
+                    // For now, let's just keep the state empty or show a static default if really needed.
+                    // But preferably, we should have seeded the DB.
+                    // Let's use a fallback local list if DB is empty to avoid broken UI on first load if seed failed.
+                    const defaultCategories = [
+                        { id: 1, name: 'Food', icon: 'cutlery', color: '#FF5555' },
+                        { id: 2, name: 'Shopping', icon: 'shopping-bag', color: '#FFA500' },
+                        { id: 3, name: 'Transport', icon: 'car', color: '#3B82F6' },
+                    ];
+                    setCategories(defaultCategories);
+                }
+            } catch (err) {
+                console.error("Error fetching categories:", err);
+            }
+        };
+        fetchCategories();
+    }, []);
+
+    // We need to change 'wallets' from const to state
+    const [wallets, setWallets] = useState([]);
+
+    useEffect(() => { // Fetch wallets
+        const getWallets = async () => {
+            try {
+                const { data, error } = await supabase.from('wallets').select('*');
+                if (error) throw error;
+                if (data) setWallets(data);
+            } catch (e) { console.error(e); }
+        };
+        getWallets();
+    }, []);
 
     // Initialize selected items if in edit mode
     useEffect(() => {
@@ -51,16 +93,32 @@ export default function ExpenseScreen() {
                 const category = categories.find(c => c.name === params.category);
                 if (category) setSelectedCategory(category);
             }
-            if (params.wallet) {
-                const wallet = wallets.find(w => w.name === params.wallet);
+            if (params.wallet_id && wallets.length > 0) {
+                const wallet = wallets.find(w => w.id === params.wallet_id);
                 if (wallet) setSelectedWallet(wallet);
             }
         }
-    }, [isEditMode]);
+    }, [isEditMode, wallets, categories, params]);
 
     const handleContinue = async () => {
         if (!amount || !selectedCategory || !selectedWallet) {
             alert('Please fill all required fields');
+            return;
+        }
+
+        const expenseAmount = parseFloat(amount);
+        let availableBalance = selectedWallet.amount || 0;
+
+        // Note: For edits, we are strictly checking against current wallet balance.
+        // The DB trigger handles the actual balance update complexity.
+        // Ideally we'd add back the old amount for the UI check if editing same wallet,
+        // but for now strict check invalidating if (current < new) is safer/simpler.
+
+        if (expenseAmount > availableBalance) {
+            Alert.alert(
+                "Insufficient Funds",
+                "You do not have enough balance in this wallet."
+            );
             return;
         }
 
@@ -76,19 +134,25 @@ export default function ExpenseScreen() {
                 user_id: user.id,
                 amount: parseFloat(amount),
                 category: selectedCategory.name,
+                wallet_id: selectedWallet.id,
                 wallet: selectedWallet.name,
                 description: description,
-                is_repeat: isRepeatEnabled,
+                // On edit, we generally preserve created_at unless specific requirement, 
+                // but checking original code: it was updating it, so we keep that behavior or just use the selected date.
+                created_at: date.toISOString(),
             };
 
             let error;
             if (isEditMode) {
+                // DB Trigger handles wallet updates now
                 const { error: updateError } = await supabase
                     .from('expenses')
                     .update(payload)
                     .eq('id', params.id);
                 error = updateError;
+
             } else {
+                // DB Trigger handles wallet updates now
                 const { error: insertError } = await supabase
                     .from('expenses')
                     .insert([payload]);
@@ -104,7 +168,7 @@ export default function ExpenseScreen() {
             }
         } catch (error) {
             console.error('Unexpected error:', error);
-            alert('An unexpected error occurred');
+            alert('An unexpected error occurred: ' + error.message);
         }
     };
 
@@ -134,7 +198,7 @@ export default function ExpenseScreen() {
                     {/* Amount Input Field */}
                     <Text style={styles.amountLabel}>How much?</Text>
                     <View style={styles.amountInputContainer}>
-                        <Text style={styles.currencySymbol}>$</Text>
+                        <Text style={styles.currencySymbol}>{currencySymbol}</Text>
                         <TextInput
                             style={styles.amountInput}
                             placeholder="0"
@@ -177,7 +241,7 @@ export default function ExpenseScreen() {
                                         setShowCategoryDropdown(false);
                                     }}
                                 >
-                                    <FontAwesome name={category.icon} size={16} color="#7C3FED" />
+                                    <FontAwesome name={category.icon} size={16} color={category.color || "#7C3FED"} />
                                     <Text style={styles.dropdownItemText}>{category.name}</Text>
                                 </TouchableOpacity>
                             ))}
@@ -196,8 +260,9 @@ export default function ExpenseScreen() {
 
                     {/* Wallet Dropdown */}
                     <TouchableOpacity
-                        style={styles.inputField}
-                        onPress={() => setShowWalletDropdown(!showWalletDropdown)}
+                        style={[styles.inputField, isEditMode && { opacity: 0.7 }]}
+                        onPress={() => !isEditMode && setShowWalletDropdown(!showWalletDropdown)}
+                        disabled={isEditMode}
                     >
                         <Text
                             style={[
@@ -207,7 +272,7 @@ export default function ExpenseScreen() {
                         >
                             {selectedWallet ? selectedWallet.name : 'Wallet'}
                         </Text>
-                        <FontAwesome name="chevron-down" size={16} color="#B0B0B0" />
+                        {!isEditMode && <FontAwesome name="chevron-down" size={16} color="#B0B0B0" />}
                     </TouchableOpacity>
 
                     {/* Wallet Dropdown Menu */}
@@ -222,34 +287,35 @@ export default function ExpenseScreen() {
                                         setShowWalletDropdown(false);
                                     }}
                                 >
-                                    <FontAwesome name="wallet" size={16} color="#7C3FED" />
+                                    <FontAwesome name="bank" size={16} color="#7C3FED" />
                                     <Text style={styles.dropdownItemText}>{wallet.name}</Text>
                                 </TouchableOpacity>
                             ))}
                         </View>
                     )}
 
-                    {/* Repeat Toggle */}
-                    <View style={styles.repeatContainer}>
-                        <View>
-                            <Text style={styles.repeatLabel}>Repeat</Text>
-                            <Text style={styles.repeatSubtext}>Repeat transaction</Text>
-                        </View>
-                        <TouchableOpacity
-                            style={[
-                                styles.toggle,
-                                isRepeatEnabled && styles.toggleActive,
-                            ]}
-                            onPress={() => setIsRepeatEnabled(!isRepeatEnabled)}
-                        >
-                            <View
-                                style={[
-                                    styles.toggleCircle,
-                                    isRepeatEnabled && styles.toggleCircleActive,
-                                ]}
-                            />
-                        </TouchableOpacity>
-                    </View>
+                    {/* Date Picker */}
+                    <TouchableOpacity
+                        style={styles.inputField}
+                        onPress={() => setShowDatePicker(true)}
+                    >
+                        <Text style={[styles.inputLabel, { color: '#000', fontWeight: '500' }]}>
+                            {format(date, 'dd MMM yyyy')}
+                        </Text>
+                        <FontAwesome name="calendar" size={16} color="#B0B0B0" />
+                    </TouchableOpacity>
+
+                    {showDatePicker && (
+                        <DateTimePicker
+                            value={date}
+                            mode="date"
+                            display="default"
+                            onChange={(event, selectedDate) => {
+                                setShowDatePicker(false);
+                                if (selectedDate) setDate(selectedDate);
+                            }}
+                        />
+                    )}
 
                     {/* Continue Button */}
                     <TouchableOpacity
