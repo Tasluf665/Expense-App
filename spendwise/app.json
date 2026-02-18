@@ -2,7 +2,7 @@
   "expo": {
     "name": "SpendWise",
     "slug": "spendwise",
-    "version": "1.0.1",
+    "version": "1.0.4",
     "orientation": "portrait",
     "scheme": "com.tasluf.spendwise",
     "icon": "./assets/images/icon.png",
